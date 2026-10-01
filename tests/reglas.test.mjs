@@ -418,6 +418,59 @@ describe('calificaciones y recomendados', () => {
   });
 });
 
+describe('foto de perfil, sobre mí y galería', () => {
+  const SUMAR = `insert into galeria (foto_path) values ($1) returning *`;
+
+  test('cada uno pone su foto y su "sobre mí", solo de su carpeta', async () => {
+    await como(CARLOS);
+    await db.query(`update perfiles set foto_path = $1, sobre_mi = 'Pinto casas hace 15 años.' where id = $2`, [
+      `${CARLOS}/avatar.jpg`,
+      CARLOS,
+    ]);
+    const [p] = await filas('select foto_path, sobre_mi from perfiles where id = $1', [CARLOS]);
+    assert.equal(p.sobre_mi, 'Pinto casas hace 15 años.');
+    await falla(`update perfiles set foto_path = $1 where id = $2`, [`${LUCIA}/robada.jpg`, CARLOS], /perfiles_foto_propia/);
+  });
+
+  test('el trabajador suma fotos a su galería y todos con sesión las ven', async () => {
+    await como(CARLOS);
+    const [foto] = await filas(SUMAR, [`${CARLOS}/galeria/frente.jpg`]);
+    assert.equal(foto.trabajador_id, CARLOS);
+    await como(MARTA);
+    assert.equal((await filas('select * from galeria where trabajador_id = $1', [CARLOS])).length, 1);
+    await como(null);
+    await falla('select * from galeria', [], /permission denied/);
+  });
+
+  test('un cliente no tiene galería y nadie sube fotos ajenas', async () => {
+    await como(MARTA);
+    await falla(SUMAR, [`${MARTA}/galeria/x.jpg`], /row-level security/);
+    await como(CARLOS);
+    await falla(SUMAR, [`${LUCIA}/galeria/x.jpg`], /galeria_foto_propia/);
+  });
+
+  test('la galería tiene hasta 12 fotos', async () => {
+    await como(CARLOS);
+    for (let i = 0; i < 12; i++) await db.query(SUMAR, [`${CARLOS}/galeria/${i}.jpg`]);
+    await falla(SUMAR, [`${CARLOS}/galeria/13.jpg`], /row-level security/);
+  });
+
+  test('cada uno borra solo sus fotos', async () => {
+    await como(CARLOS);
+    const [foto] = await filas(SUMAR, [`${CARLOS}/galeria/a.jpg`]);
+    await como(LUCIA);
+    assert.equal((await db.query('delete from galeria where id = $1', [foto.id])).affectedRows, 0);
+    await como(CARLOS);
+    assert.equal((await db.query('delete from galeria where id = $1', [foto.id])).affectedRows, 1);
+  });
+
+  test('en storage, cada uno sube solo a su carpeta de perfiles', async () => {
+    await como(CARLOS);
+    await db.query(`insert into storage.objects (bucket_id, name) values ('perfiles', $1)`, [`${CARLOS}/avatar.jpg`]);
+    await falla(`insert into storage.objects (bucket_id, name) values ('perfiles', $1)`, [`${LUCIA}/avatar.jpg`], /row-level security/);
+  });
+});
+
 describe('borrar cuenta', () => {
   test('cada uno borra solo su cuenta, y se va todo lo suyo', async () => {
     await como(MARTA);

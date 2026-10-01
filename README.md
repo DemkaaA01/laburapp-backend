@@ -21,11 +21,12 @@ tests/
 
 | Tabla | Qué guarda | Quién la ve |
 |---|---|---|
-| `perfiles` | rol, nombre, apellido, oficios, zonas, comercio | usuarios con sesión |
+| `perfiles` | rol, nombre, apellido, oficios, zonas, comercio, foto, sobre mí | usuarios con sesión |
 | `datos_privados` | WhatsApp y sexo | solo el dueño |
 | `trabajos` | lo que publica el cliente (0 a 5 fotos), estado, trabajador elegido | el cliente; trabajadores si está abierto, si se postularon o si los eligieron |
 | `postulaciones` | precio y mensaje del trabajador | el trabajador y el cliente del trabajo |
 | `opiniones` | del cliente al trabajador: estrellas 1–5 y descripción, una por trabajo | usuarios con sesión |
+| `galeria` | fotos de trabajos hechos (solo trabajadores, hasta 12) | usuarios con sesión |
 | `calificaciones_clientes` | del trabajador al cliente: solo estrellas 1–5, una por trabajo | usuarios con sesión |
 
 Funciones que usa la app (`supabase.rpc(...)`):
@@ -44,7 +45,7 @@ Funciones que usa la app (`supabase.rpc(...)`):
 Estados de un trabajo: `abierto` → `asignado` → `por_confirmar` → `terminado` (o `cancelado` desde abierto o asignado).
 
 Vistas `reputacion_trabajadores` y `reputacion_clientes`: promedio y cantidad de calificaciones.
-Storage: bucket privado `fotos-trabajos`, cada usuario sube a la carpeta `{su id}/`.
+Storage: bucket privado `fotos-trabajos` (fotos de pedidos, links firmados) y bucket público `perfiles` (foto de perfil y galería). Cada usuario sube solo a la carpeta `{su id}/`.
 
 ## Uso
 
