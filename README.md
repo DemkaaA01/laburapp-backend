@@ -56,6 +56,9 @@ npm install
 npm test                 # tests de reglas (PGlite, no hace falta Docker)
 ```
 
+GitHub Actions corre los tests en cada push a `main` y en cada pull request.
+Lo que se fue haciendo está en [REGISTRO.md](REGISTRO.md).
+
 ### Aplicar en el proyecto de desarrollo (sin Docker)
 
 ```bash

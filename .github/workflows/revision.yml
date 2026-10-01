@@ -1,0 +1,28 @@
+# Revisión automática: en cada push a main y en cada pull request.
+# Corre los tests de reglas de la base (migraciones + seed + RLS) con PGlite,
+# sin Docker ni proyecto de Supabase.
+name: Revisión
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: Tests de la base
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tests de reglas (RLS, permisos y funciones)
+        run: npm test
