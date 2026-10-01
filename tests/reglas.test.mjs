@@ -471,6 +471,105 @@ describe('foto de perfil, sobre mí y galería', () => {
   });
 });
 
+describe('servicios y pedidos directos', () => {
+  const PUBLICAR_SERVICIO = `insert into servicios (oficio, titulo, descripcion, precio_desde, precio_unidad, zonas)
+    values ($1, 'Pintura de interiores', 'Pinto livings, dormitorios y cocinas. Trabajo prolijo.', 3500, 'm2', $2) returning *`;
+  const PEDIR = `insert into trabajos (oficio, descripcion, zona, para_cuando, trabajador_invitado_id, servicio_id)
+    values ('Pintura', 'Pintar el dormitorio, 12 m2.', 'Centro', 'sin_apuro', $1, $2) returning *`;
+
+  async function servicioDeCarlos() {
+    await como(CARLOS);
+    const [s] = await filas(PUBLICAR_SERVICIO, ['Pintura', ['Centro', 'Zona Sur']]);
+    return s;
+  }
+
+  test('el trabajador publica servicios solo de sus oficios', async () => {
+    const s = await servicioDeCarlos();
+    assert.equal(s.trabajador_id, CARLOS);
+    await falla(PUBLICAR_SERVICIO, ['Gas', ['Centro']], /row-level security/); // Carlos no hace gas
+    await como(MARTA); // un cliente no publica servicios
+    await falla(PUBLICAR_SERVICIO, ['Pintura', ['Centro']], /row-level security/);
+  });
+
+  test('precio: los dos datos o ninguno', async () => {
+    await como(CARLOS);
+    await falla(
+      `insert into servicios (oficio, titulo, descripcion, precio_desde, zonas) values ('Pintura', 'Pintura general', 'Pinto todo tipo de ambientes.', 1000, '{Centro}')`,
+      [],
+      /servicios_precio/,
+    );
+  });
+
+  test('hasta 10 servicios por trabajador', async () => {
+    await como(CARLOS);
+    const [{ ya }] = await filas('select count(*)::int as ya from servicios where trabajador_id = $1', [CARLOS]);
+    for (let i = ya; i < 10; i++) await db.query(PUBLICAR_SERVICIO, ['Pintura', ['Centro']]);
+    await falla(PUBLICAR_SERVICIO, ['Pintura', ['Centro']], /row-level security/);
+  });
+
+  test('los clientes ven los servicios activos que llegan a su zona; pausados solo el dueño', async () => {
+    const s = await servicioDeCarlos();
+    const ids = async (sql) => (await filas(sql)).map((x) => x.id);
+    await como(MARTA); // Centro
+    assert.ok((await ids('select id from servicios_para_mi()')).includes(s.id));
+    assert.ok(!(await ids(`select id from servicios_para_mi('Electricidad')`)).includes(s.id));
+    await como(DIEGO); // Zona Norte: no le llega
+    assert.ok(!(await ids('select id from servicios_para_mi()')).includes(s.id));
+
+    await como(CARLOS);
+    await db.query('update servicios set activo = false where id = $1', [s.id]);
+    assert.equal((await filas('select id from servicios where id = $1', [s.id])).length, 1);
+    await como(MARTA);
+    assert.equal((await filas('select id from servicios where id = $1', [s.id])).length, 0);
+  });
+
+  test('nadie edita ni borra servicios ajenos', async () => {
+    const s = await servicioDeCarlos();
+    await como(LUCIA);
+    assert.equal((await db.query(`update servicios set titulo = 'Trucho' where id = $1`, [s.id])).affectedRows, 0);
+    assert.equal((await db.query('delete from servicios where id = $1', [s.id])).affectedRows, 0);
+  });
+
+  test('el pedido directo lo ven solo el cliente y el trabajador invitado', async () => {
+    const s = await servicioDeCarlos();
+    await como(MARTA);
+    const [t] = await filas(PEDIR, [CARLOS, s.id]);
+    assert.equal(t.trabajador_invitado_id, CARLOS);
+
+    await como(CARLOS);
+    const paraCarlos = (await filas('select id from trabajos_para_mi()')).map((x) => x.id);
+    assert.equal(paraCarlos[0], t.id); // el pedido directo va primero
+    await como(SERGIO); // también hace pintura, pero no se lo pidieron a él
+    assert.equal((await filas('select id from trabajos where id = $1', [t.id])).length, 0);
+    assert.ok(!(await filas('select id from trabajos_para_mi()')).some((x) => x.id === t.id));
+  });
+
+  test('en un pedido directo solo pasa precio el invitado, aunque no sea de su zona', async () => {
+    const s = await servicioDeCarlos();
+    await como(MARTA);
+    const [t] = await filas(
+      `insert into trabajos (oficio, descripcion, zona, para_cuando, trabajador_invitado_id, servicio_id)
+       values ('Pintura', 'Pintar la reja del frente.', 'Costanera', 'sin_apuro', $1, $2) returning id`,
+      [CARLOS, s.id],
+    );
+    await como(SERGIO);
+    await falla(`insert into postulaciones (trabajo_id, precio) values ($1, 5000)`, [t.id], /row-level security/);
+    await como(CARLOS); // Costanera no es su zona, pero se lo pidieron a él
+    await db.query(`insert into postulaciones (trabajo_id, precio) values ($1, 45000)`, [t.id]);
+  });
+
+  test('no se puede invitar a un cliente ni con un servicio ajeno o pausado', async () => {
+    const s = await servicioDeCarlos();
+    await como(MARTA);
+    await falla(PEDIR, [DIEGO, null], /row-level security/);
+    await falla(PEDIR, [LUCIA, s.id], /row-level security/); // el servicio es de Carlos
+    await como(CARLOS);
+    await db.query('update servicios set activo = false where id = $1', [s.id]);
+    await como(MARTA);
+    await falla(PEDIR, [CARLOS, s.id], /row-level security/);
+  });
+});
+
 describe('borrar cuenta', () => {
   test('cada uno borra solo su cuenta, y se va todo lo suyo', async () => {
     await como(MARTA);

@@ -23,9 +23,10 @@ tests/
 |---|---|---|
 | `perfiles` | rol, nombre, apellido, oficios, zonas, comercio, foto, sobre mí | usuarios con sesión |
 | `datos_privados` | WhatsApp y sexo | solo el dueño |
-| `trabajos` | lo que publica el cliente (0 a 5 fotos), estado, trabajador elegido | el cliente; trabajadores si está abierto, si se postularon o si los eligieron |
+| `trabajos` | lo que publica el cliente (0 a 5 fotos), estado, trabajador elegido; si es pedido directo, trabajador invitado y servicio | el cliente; trabajadores si está abierto, si se postularon o si los eligieron |
 | `postulaciones` | precio y mensaje del trabajador | el trabajador y el cliente del trabajo |
 | `opiniones` | del cliente al trabajador: estrellas 1–5 y descripción, una por trabajo | usuarios con sesión |
+| `servicios` | avisos del trabajador: oficio, título, descripción, precio desde, zonas, fotos, activo (hasta 10) | activos: usuarios con sesión; pausados: solo el dueño |
 | `galeria` | fotos de trabajos hechos (solo trabajadores, hasta 12) | usuarios con sesión |
 | `calificaciones_clientes` | del trabajador al cliente: solo estrellas 1–5, una por trabajo | usuarios con sesión |
 
@@ -34,6 +35,7 @@ Funciones que usa la app (`supabase.rpc(...)`):
 | Función | Quién | Qué hace |
 |---|---|---|
 | `trabajos_para_mi()` | trabajador | trabajos abiertos de sus oficios y zonas |
+| `servicios_para_mi(p_oficio)` | cliente | servicios activos que llegan a su zona, mejor puntuados primero |
 | `trabajadores_recomendados(p_limite)` | cliente | trabajadores de sus rubros y su zona, mejor puntuados primero |
 | `elegir_postulacion(p_postulacion_id)` | cliente | asigna el trabajo y fija el precio acordado |
 | `contacto_del_trabajo(p_trabajo_id)` | cliente o trabajador elegido | nombre y WhatsApp de la otra parte |

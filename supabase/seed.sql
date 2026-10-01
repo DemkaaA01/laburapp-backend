@@ -96,3 +96,13 @@ values ('a0000000-0000-4000-8000-000000000005', '22222222-2222-4222-8222-2222222
 insert into public.calificaciones_clientes (trabajo_id, trabajador_id, cliente_id, puntaje)
 values ('a0000000-0000-4000-8000-000000000005', '44444444-4444-4444-8444-444444444444',
         '22222222-2222-4222-8222-222222222222', 5);
+
+-- Servicios publicados por trabajadores.
+insert into public.servicios (trabajador_id, oficio, titulo, descripcion, precio_desde, precio_unidad, zonas)
+values
+  ('33333333-3333-4333-8333-333333333333', 'Pintura', 'Pintura de interiores y frentes',
+   'Pinto livings, dormitorios, cocinas y frentes. Enduido, lijado y dos manos. Dejo todo limpio.', 3500, 'm2', '{Centro,Zona Sur}'),
+  ('44444444-4444-4444-8444-444444444444', 'Electricidad', 'Electricista matriculada',
+   'Instalaciones nuevas, tableros, disyuntores, cambio de luminarias a LED. Presupuesto sin cargo.', 15000, 'visita', '{Toda la ciudad}'),
+  ('55555555-5555-4555-8555-555555555555', 'Plomería', 'Plomería y destapaciones',
+   'Pérdidas, canillas, sifones, termotanques y destapaciones. Voy en el día.', null, null, '{Zona Norte,Centro}');
