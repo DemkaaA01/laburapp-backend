@@ -23,9 +23,10 @@ tests/
 |---|---|---|
 | `perfiles` | rol, nombre, apellido, oficios, zonas, comercio | usuarios con sesión |
 | `datos_privados` | WhatsApp y sexo | solo el dueño |
-| `trabajos` | lo que publica el cliente, estado, trabajador elegido | el cliente; trabajadores si está abierto, si se postularon o si los eligieron |
+| `trabajos` | lo que publica el cliente (0 a 5 fotos), estado, trabajador elegido | el cliente; trabajadores si está abierto, si se postularon o si los eligieron |
 | `postulaciones` | precio y mensaje del trabajador | el trabajador y el cliente del trabajo |
-| `opiniones` | puntaje 1–5 y comentario, una por trabajo | usuarios con sesión |
+| `opiniones` | del cliente al trabajador: estrellas 1–5 y descripción, una por trabajo | usuarios con sesión |
+| `calificaciones_clientes` | del trabajador al cliente: solo estrellas 1–5, una por trabajo | usuarios con sesión |
 
 Funciones que usa la app (`supabase.rpc(...)`):
 
@@ -35,10 +36,14 @@ Funciones que usa la app (`supabase.rpc(...)`):
 | `trabajadores_recomendados(p_limite)` | cliente | trabajadores de sus rubros y su zona, mejor puntuados primero |
 | `elegir_postulacion(p_postulacion_id)` | cliente | asigna el trabajo y fija el precio acordado |
 | `contacto_del_trabajo(p_trabajo_id)` | cliente o trabajador elegido | nombre y WhatsApp de la otra parte |
-| `terminar_trabajo(p_trabajo_id)` | cliente | asignado → terminado (habilita la opinión) |
+| `marcar_terminado(p_trabajo_id)` | trabajador elegido | asignado → por_confirmar |
+| `confirmar_terminado(p_trabajo_id)` | cliente | por_confirmar → terminado (habilita las calificaciones) |
+| `rechazar_terminado(p_trabajo_id)` | cliente | por_confirmar → asignado |
 | `cancelar_trabajo(p_trabajo_id)` | cliente | abierto o asignado → cancelado |
 
-Vista `reputacion_trabajadores`: promedio y cantidad de opiniones por trabajador.
+Estados de un trabajo: `abierto` → `asignado` → `por_confirmar` → `terminado` (o `cancelado` desde abierto o asignado).
+
+Vistas `reputacion_trabajadores` y `reputacion_clientes`: promedio y cantidad de calificaciones.
 Storage: bucket privado `fotos-trabajos`, cada usuario sube a la carpeta `{su id}/`.
 
 ## Uso

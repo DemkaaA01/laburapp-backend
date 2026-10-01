@@ -22,6 +22,7 @@ const ELECTRICIDAD_MARTA = 'a0000000-0000-4000-8000-000000000002';
 const GAS_DIEGO = 'a0000000-0000-4000-8000-000000000003';
 const PLOMERIA_MARTA_ASIGNADO = 'a0000000-0000-4000-8000-000000000004';
 const LED_DIEGO_TERMINADO = 'a0000000-0000-4000-8000-000000000005';
+const REVOQUE_MARTA_POR_CONFIRMAR = 'a0000000-0000-4000-8000-000000000006';
 
 let db;
 
@@ -289,13 +290,36 @@ describe('elegir, contacto, terminar y cancelar', () => {
     await falla('select * from contacto_del_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO], /No participás/);
   });
 
-  test('solo el cliente termina el trabajo, y solo si está asignado', async () => {
+  test('el trabajador marca terminado y el cliente confirma', async () => {
+    await como(MARTA); // el cliente no puede marcarlo por el trabajador
+    await falla('select marcar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO], /Solo el trabajador elegido/);
+    await como(CARLOS); // otro trabajador tampoco
+    await falla('select marcar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO], /Solo el trabajador elegido/);
+
     await como(RAMON);
-    await falla('select terminar_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO], /Solo quien publicó/);
+    const [marcado] = await filas('select * from marcar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.equal(marcado.estado, 'por_confirmar');
+    await falla('select confirmar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO], /Solo quien publicó/);
+
     await como(MARTA);
-    await falla('select terminar_trabajo($1)', [PINTURA_MARTA], /tiene trabajador elegido/);
-    const [t] = await filas('select * from terminar_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    const [t] = await filas('select * from confirmar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO]);
     assert.equal(t.estado, 'terminado');
+  });
+
+  test('el cliente no confirma lo que el trabajador no marcó, y puede rechazarlo', async () => {
+    await como(MARTA);
+    await falla('select confirmar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO], /todavía no marcó/);
+
+    const [t] = await filas('select * from rechazar_terminado($1)', [REVOQUE_MARTA_POR_CONFIRMAR]);
+    assert.equal(t.estado, 'asignado');
+    assert.equal(t.marcado_terminado_at, null);
+    await falla('select confirmar_terminado($1)', [REVOQUE_MARTA_POR_CONFIRMAR], /todavía no marcó/);
+  });
+
+  test('mientras espera confirmación, los dos siguen viendo el contacto', async () => {
+    await como(CARLOS);
+    const [cliente] = await filas('select * from contacto_del_trabajo($1)', [REVOQUE_MARTA_POR_CONFIRMAR]);
+    assert.equal(cliente.nombre, 'Marta');
   });
 
   test('el cliente cancela su trabajo; nadie más puede', async () => {
@@ -304,7 +328,7 @@ describe('elegir, contacto, terminar y cancelar', () => {
     await como(MARTA);
     const [t] = await filas('select * from cancelar_trabajo($1)', [ELECTRICIDAD_MARTA]);
     assert.equal(t.estado, 'cancelado');
-    await falla('select cancelar_trabajo($1)', [ELECTRICIDAD_MARTA], /ya está terminado o cancelado/);
+    await falla('select cancelar_trabajo($1)', [ELECTRICIDAD_MARTA], /ya no se puede cancelar/);
   });
 
   test('sin sesión no se pueden usar las funciones', async () => {
@@ -314,31 +338,70 @@ describe('elegir, contacto, terminar y cancelar', () => {
   });
 });
 
-describe('opiniones y recomendados', () => {
+describe('calificaciones y recomendados', () => {
   const OPINAR = `insert into opiniones (trabajo_id, trabajador_id, puntaje, comentario) values ($1, $2, $3, $4)`;
+  const CALIFICAR_CLIENTE = `insert into calificaciones_clientes (trabajo_id, cliente_id, puntaje) values ($1, $2, $3)`;
 
-  test('el cliente opina una sola vez sobre el trabajador elegido, con el trabajo terminado', async () => {
+  const terminarRevoque = async () => {
+    await db.exec('reset role');
+    await db.query(`update trabajos set estado = 'terminado', terminado_at = now() where id = $1`, [
+      REVOQUE_MARTA_POR_CONFIRMAR,
+    ]);
+  };
+
+  test('el cliente opina una sola vez, con estrellas y descripción, cuando el trabajo está terminado', async () => {
     await como(MARTA);
-    await falla(OPINAR, [PLOMERIA_MARTA_ASIGNADO, RAMON, 5, 'Excelente'], /row-level security/); // todavía asignado
-    await db.query('select terminar_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO]);
-    await falla(OPINAR, [PLOMERIA_MARTA_ASIGNADO, CARLOS, 1, 'No era él'], /row-level security/);
-    await db.query(OPINAR, [PLOMERIA_MARTA_ASIGNADO, RAMON, 4, 'Muy bien']);
-    await falla(OPINAR, [PLOMERIA_MARTA_ASIGNADO, RAMON, 5, 'Otra más'], /opiniones_trabajo_id_key/);
+    await falla(OPINAR, [REVOQUE_MARTA_POR_CONFIRMAR, CARLOS, 5, 'Excelente trabajo'], /row-level security/); // falta confirmar
+    await terminarRevoque();
+    await como(MARTA);
+    await falla(OPINAR, [REVOQUE_MARTA_POR_CONFIRMAR, RAMON, 1, 'No fue él quien lo hizo'], /row-level security/);
+    await falla(OPINAR, [REVOQUE_MARTA_POR_CONFIRMAR, CARLOS, 5, null], /null value|not-null/);
+    await falla(OPINAR, [REVOQUE_MARTA_POR_CONFIRMAR, CARLOS, 6, 'Más de cinco estrellas'], /opiniones_puntaje_check/);
+    await db.query(OPINAR, [REVOQUE_MARTA_POR_CONFIRMAR, CARLOS, 4, 'Muy prolijo, dejó todo limpio.']);
+    await falla(OPINAR, [REVOQUE_MARTA_POR_CONFIRMAR, CARLOS, 5, 'Quiero opinar otra vez'], /opiniones_trabajo_id_key/);
   });
 
-  test('nadie opina sobre trabajos ajenos ni cambia opiniones', async () => {
+  test('el trabajador califica al cliente solo con estrellas, una vez', async () => {
+    await como(CARLOS);
+    await falla(CALIFICAR_CLIENTE, [REVOQUE_MARTA_POR_CONFIRMAR, MARTA, 5], /row-level security/); // falta confirmar
+    await terminarRevoque();
+    await como(CARLOS);
+    await falla(CALIFICAR_CLIENTE, [REVOQUE_MARTA_POR_CONFIRMAR, DIEGO, 1], /row-level security/); // otro cliente
+    await db.query(CALIFICAR_CLIENTE, [REVOQUE_MARTA_POR_CONFIRMAR, MARTA, 5]);
+    await falla(CALIFICAR_CLIENTE, [REVOQUE_MARTA_POR_CONFIRMAR, MARTA, 4], /calificaciones_clientes_trabajo_id_key/);
+    await falla(
+      `insert into calificaciones_clientes (trabajo_id, cliente_id, puntaje, trabajador_id) values ($1, $2, 5, $3)`,
+      [LED_DIEGO_TERMINADO, DIEGO, CARLOS],
+      /permission denied/,
+    );
+  });
+
+  test('solo el trabajador elegido califica al cliente', async () => {
+    await terminarRevoque();
+    await como(LUCIA);
+    await falla(CALIFICAR_CLIENTE, [REVOQUE_MARTA_POR_CONFIRMAR, MARTA, 1], /row-level security/);
+    await como(MARTA); // el cliente no se califica a sí mismo
+    await falla(CALIFICAR_CLIENTE, [REVOQUE_MARTA_POR_CONFIRMAR, MARTA, 5], /row-level security/);
+  });
+
+  test('nadie opina sobre trabajos ajenos ni cambia calificaciones', async () => {
     await como(MARTA);
-    await falla(OPINAR, [LED_DIEGO_TERMINADO, LUCIA, 1, 'Mala'], /row-level security|opiniones_trabajo_id_key/);
+    await falla(OPINAR, [LED_DIEGO_TERMINADO, LUCIA, 1, 'No fue mi trabajo'], /row-level security|opiniones_trabajo_id_key/);
     await como(DIEGO);
     await falla(`update opiniones set puntaje = 1`, [], /permission denied/);
     await falla(`delete from opiniones`, [], /permission denied/);
+    await como(LUCIA);
+    await falla(`update calificaciones_clientes set puntaje = 1`, [], /permission denied/);
   });
 
-  test('la reputación se calcula de las opiniones', async () => {
+  test('la reputación de trabajadores y clientes se calcula de las calificaciones', async () => {
     await como(MARTA);
-    const [r] = await filas('select * from reputacion_trabajadores where trabajador_id = $1', [LUCIA]);
-    assert.equal(r.cantidad_opiniones, 1);
-    assert.equal(Number(r.promedio), 5);
+    const [lucia] = await filas('select * from reputacion_trabajadores where trabajador_id = $1', [LUCIA]);
+    assert.equal(lucia.cantidad_opiniones, 1);
+    assert.equal(Number(lucia.promedio), 5);
+    const [diego] = await filas('select * from reputacion_clientes where cliente_id = $1', [DIEGO]);
+    assert.equal(diego.cantidad_calificaciones, 1);
+    assert.equal(Number(diego.promedio), 5);
   });
 
   test('al cliente le recomendamos trabajadores de sus rubros y su zona, mejor puntuados primero', async () => {
@@ -356,6 +419,17 @@ describe('opiniones y recomendados', () => {
 });
 
 describe('fotos', () => {
+  const PUBLICAR = `insert into trabajos (oficio, descripcion, zona, para_cuando, fotos) values ('Pintura', 'Pintar el frente de la casa.', 'Centro', 'sin_apuro', $1) returning fotos`;
+
+  test('un trabajo puede tener de 0 a 5 fotos, todas de la carpeta del cliente', async () => {
+    await como(MARTA);
+    assert.deepEqual((await filas(PUBLICAR, [[]]))[0].fotos, []);
+    const cinco = [1, 2, 3, 4, 5].map((n) => `${MARTA}/frente-${n}.jpg`);
+    assert.equal((await filas(PUBLICAR, [cinco]))[0].fotos.length, 5);
+    await falla(PUBLICAR, [[...cinco, `${MARTA}/frente-6.jpg`]], /trabajos_fotos/);
+    await falla(PUBLICAR, [[`${DIEGO}/ajena.jpg`]], /trabajos_fotos/);
+  });
+
   test('cada uno sube fotos solo a su carpeta', async () => {
     await como(MARTA);
     await db.query(`insert into storage.objects (bucket_id, name) values ('fotos-trabajos', $1)`, [`${MARTA}/living.jpg`]);

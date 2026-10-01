@@ -59,14 +59,17 @@ values
   ('a0000000-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111', 'Plomería',
    'Pierde agua la canilla de la cocina y el sifón del lavadero.', 'Centro', 'lo_antes_posible', 'abierto', now() - interval '10 days'),
   ('a0000000-0000-4000-8000-000000000005', '22222222-2222-4222-8222-222222222222', 'Electricidad',
-   'Cambiar 6 tubos fluorescentes por paneles LED en el local.', 'Zona Norte', 'sin_apuro', 'abierto', now() - interval '20 days');
+   'Cambiar 6 tubos fluorescentes por paneles LED en el local.', 'Zona Norte', 'sin_apuro', 'abierto', now() - interval '20 days'),
+  ('a0000000-0000-4000-8000-000000000006', '11111111-1111-4111-8111-111111111111', 'Albañilería',
+   'Revocar una pared del patio que se está descascarando, 3 x 2 metros.', 'Centro', 'sin_apuro', 'abierto', now() - interval '7 days');
 
 insert into public.postulaciones (trabajo_id, trabajador_id, precio, mensaje)
 values
   ('a0000000-0000-4000-8000-000000000001', '33333333-3333-4333-8333-333333333333', 180000, 'Lo hago en dos días, incluye enduido de detalles.'),
   ('a0000000-0000-4000-8000-000000000002', '44444444-4444-4444-8444-444444444444', 25000, 'Paso a revisar mañana a la tarde.'),
   ('a0000000-0000-4000-8000-000000000004', '55555555-5555-4555-8555-555555555555', 30000, 'Llevo repuestos.'),
-  ('a0000000-0000-4000-8000-000000000005', '44444444-4444-4444-8444-444444444444', 60000, null);
+  ('a0000000-0000-4000-8000-000000000005', '44444444-4444-4444-8444-444444444444', 60000, null),
+  ('a0000000-0000-4000-8000-000000000006', '33333333-3333-4333-8333-333333333333', 90000, 'Incluye materiales.');
 
 -- Plomería de Marta: asignado a Ramón.
 update public.trabajos
@@ -74,7 +77,13 @@ set estado = 'asignado', trabajador_elegido_id = '55555555-5555-4555-8555-555555
     precio_acordado = 30000, asignado_at = now() - interval '9 days'
 where id = 'a0000000-0000-4000-8000-000000000004';
 
--- LED del kiosco: terminado por Lucía, con opinión.
+-- Revoque de Marta: Carlos lo marcó como terminado, falta que Marta confirme.
+update public.trabajos
+set estado = 'por_confirmar', trabajador_elegido_id = '33333333-3333-4333-8333-333333333333',
+    precio_acordado = 90000, asignado_at = now() - interval '6 days', marcado_terminado_at = now() - interval '1 day'
+where id = 'a0000000-0000-4000-8000-000000000006';
+
+-- LED del kiosco: terminado por Lucía, calificados los dos.
 update public.trabajos
 set estado = 'terminado', trabajador_elegido_id = '44444444-4444-4444-8444-444444444444',
     precio_acordado = 60000, asignado_at = now() - interval '19 days', terminado_at = now() - interval '15 days'
@@ -83,3 +92,7 @@ where id = 'a0000000-0000-4000-8000-000000000005';
 insert into public.opiniones (trabajo_id, cliente_id, trabajador_id, puntaje, comentario)
 values ('a0000000-0000-4000-8000-000000000005', '22222222-2222-4222-8222-222222222222',
         '44444444-4444-4444-8444-444444444444', 5, 'Muy prolija y puntual. La recomiendo.');
+
+insert into public.calificaciones_clientes (trabajo_id, trabajador_id, cliente_id, puntaje)
+values ('a0000000-0000-4000-8000-000000000005', '44444444-4444-4444-8444-444444444444',
+        '22222222-2222-4222-8222-222222222222', 5);

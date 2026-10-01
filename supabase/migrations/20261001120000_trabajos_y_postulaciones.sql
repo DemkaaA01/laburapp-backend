@@ -3,13 +3,30 @@
 -- =============================================================================
 -- Flujo: el cliente publica un trabajo (abierto) → los trabajadores de ese
 -- oficio y esa zona se postulan con su precio → el cliente elige una
--- postulación (asignado) y ven el WhatsApp del otro → el cliente lo marca como
--- terminado y deja una opinión. Puede cancelarlo mientras no esté terminado.
+-- postulación (asignado) y ven el WhatsApp del otro → el trabajador lo marca
+-- como terminado (por_confirmar) → el cliente lo confirma (terminado) o lo
+-- rechaza (vuelve a asignado) → se califican. El cliente puede cancelarlo
+-- mientras esté abierto o asignado.
 --
 -- Los cambios de estado se hacen solo con funciones (elegir_postulacion,
--- terminar_trabajo, cancelar_trabajo), que validan todo del lado del servidor.
+-- marcar_terminado, confirmar_terminado, rechazar_terminado, cancelar_trabajo),
+-- que validan todo del lado del servidor.
 
 -- Trabajos -------------------------------------------------------------------
+
+-- Fotos: rutas en Storage (bucket fotos-trabajos), todas en la carpeta del cliente.
+create function public.fotos_validas(p_cliente_id uuid, p_fotos text[])
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select cardinality(p_fotos) <= 5
+    and coalesce(
+      (select bool_and(f like p_cliente_id::text || '/%' and char_length(f) <= 300) from unnest(p_fotos) as f),
+      true
+    )
+$$;
 
 create table public.trabajos (
   id uuid primary key default gen_random_uuid(),
@@ -18,18 +35,22 @@ create table public.trabajos (
   descripcion text not null check (char_length(trim(descripcion)) between 10 and 1000),
   zona text not null check (zona = any (public.zonas_validas())),
   para_cuando text not null check (para_cuando in ('lo_antes_posible', 'esta_semana', 'este_mes', 'sin_apuro')),
-  -- Ruta de la foto en Storage (bucket fotos-trabajos). Opcional.
-  foto_path text check (char_length(foto_path) <= 300),
-  estado text not null default 'abierto' check (estado in ('abierto', 'asignado', 'terminado', 'cancelado')),
+  -- De 0 a 5 fotos (opcionales).
+  fotos text[] not null default '{}',
+  estado text not null default 'abierto'
+    check (estado in ('abierto', 'asignado', 'por_confirmar', 'terminado', 'cancelado')),
   trabajador_elegido_id uuid references public.perfiles (id) on delete set null,
   precio_acordado integer check (precio_acordado > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   asignado_at timestamptz,
+  -- Cuando el trabajador lo marcó como terminado (espera confirmación del cliente).
+  marcado_terminado_at timestamptz,
   terminado_at timestamptz,
   cancelado_at timestamptz,
 
-  constraint trabajos_abierto_sin_elegido check (estado <> 'abierto' or trabajador_elegido_id is null)
+  constraint trabajos_abierto_sin_elegido check (estado <> 'abierto' or trabajador_elegido_id is null),
+  constraint trabajos_fotos check (public.fotos_validas(cliente_id, fotos))
 );
 
 comment on table public.trabajos is 'Trabajos que publican los clientes.';
@@ -179,8 +200,8 @@ create policy "El cliente edita su trabajo mientras está abierto"
   with check (cliente_id = (select auth.uid()) and estado = 'abierto');
 
 revoke insert, update, delete on public.trabajos from anon, authenticated;
-grant insert (oficio, descripcion, zona, para_cuando, foto_path) on public.trabajos to authenticated;
-grant update (descripcion, para_cuando, foto_path) on public.trabajos to authenticated;
+grant insert (oficio, descripcion, zona, para_cuando, fotos) on public.trabajos to authenticated;
+grant update (descripcion, para_cuando, fotos) on public.trabajos to authenticated;
 
 -- Seguridad: postulaciones ---------------------------------------------------
 
@@ -250,7 +271,35 @@ begin
 end;
 $$;
 
-create function public.terminar_trabajo(p_trabajo_id uuid)
+-- El trabajador elegido avisa que terminó; queda esperando que el cliente confirme.
+create function public.marcar_terminado(p_trabajo_id uuid)
+returns public.trabajos
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_trabajo public.trabajos;
+begin
+  select * into v_trabajo from public.trabajos where id = p_trabajo_id for update;
+  if not found or v_trabajo.trabajador_elegido_id is distinct from (select auth.uid()) then
+    raise exception 'Solo el trabajador elegido puede marcar el trabajo como terminado.' using errcode = '42501';
+  end if;
+  if v_trabajo.estado <> 'asignado' then
+    raise exception 'Solo se puede marcar como terminado un trabajo en curso.' using errcode = 'P0001';
+  end if;
+
+  update public.trabajos
+  set estado = 'por_confirmar', marcado_terminado_at = now()
+  where id = p_trabajo_id
+  returning * into v_trabajo;
+
+  return v_trabajo;
+end;
+$$;
+
+-- El cliente confirma que el trabajo está terminado (habilita las calificaciones).
+create function public.confirmar_terminado(p_trabajo_id uuid)
 returns public.trabajos
 language plpgsql
 security definer
@@ -261,14 +310,41 @@ declare
 begin
   select * into v_trabajo from public.trabajos where id = p_trabajo_id for update;
   if not found or v_trabajo.cliente_id is distinct from (select auth.uid()) then
-    raise exception 'Solo quien publicó el trabajo puede marcarlo como terminado.' using errcode = '42501';
+    raise exception 'Solo quien publicó el trabajo puede confirmar que está terminado.' using errcode = '42501';
   end if;
-  if v_trabajo.estado <> 'asignado' then
-    raise exception 'Solo se puede terminar un trabajo que tiene trabajador elegido.' using errcode = 'P0001';
+  if v_trabajo.estado <> 'por_confirmar' then
+    raise exception 'El trabajador todavía no marcó el trabajo como terminado.' using errcode = 'P0001';
   end if;
 
   update public.trabajos
   set estado = 'terminado', terminado_at = now()
+  where id = p_trabajo_id
+  returning * into v_trabajo;
+
+  return v_trabajo;
+end;
+$$;
+
+-- El cliente dice que todavía no está terminado: vuelve a estar en curso.
+create function public.rechazar_terminado(p_trabajo_id uuid)
+returns public.trabajos
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_trabajo public.trabajos;
+begin
+  select * into v_trabajo from public.trabajos where id = p_trabajo_id for update;
+  if not found or v_trabajo.cliente_id is distinct from (select auth.uid()) then
+    raise exception 'Solo quien publicó el trabajo puede responder.' using errcode = '42501';
+  end if;
+  if v_trabajo.estado <> 'por_confirmar' then
+    raise exception 'El trabajador todavía no marcó el trabajo como terminado.' using errcode = 'P0001';
+  end if;
+
+  update public.trabajos
+  set estado = 'asignado', marcado_terminado_at = null
   where id = p_trabajo_id
   returning * into v_trabajo;
 
@@ -290,7 +366,7 @@ begin
     raise exception 'Solo quien publicó el trabajo puede cancelarlo.' using errcode = '42501';
   end if;
   if v_trabajo.estado not in ('abierto', 'asignado') then
-    raise exception 'Este trabajo ya está terminado o cancelado.' using errcode = 'P0001';
+    raise exception 'Este trabajo ya no se puede cancelar.' using errcode = 'P0001';
   end if;
 
   update public.trabajos
@@ -316,7 +392,7 @@ declare
   v_otro uuid;
 begin
   select * into v_trabajo from public.trabajos where id = p_trabajo_id;
-  if not found or v_trabajo.estado not in ('asignado', 'terminado') then
+  if not found or v_trabajo.estado not in ('asignado', 'por_confirmar', 'terminado') then
     raise exception 'El contacto se ve cuando el cliente elige a un trabajador.' using errcode = '42501';
   end if;
 
@@ -354,14 +430,18 @@ $$;
 
 revoke execute on function
   public.elegir_postulacion(uuid),
-  public.terminar_trabajo(uuid),
+  public.marcar_terminado(uuid),
+  public.confirmar_terminado(uuid),
+  public.rechazar_terminado(uuid),
   public.cancelar_trabajo(uuid),
   public.contacto_del_trabajo(uuid),
   public.trabajos_para_mi()
 from public, anon;
 grant execute on function
   public.elegir_postulacion(uuid),
-  public.terminar_trabajo(uuid),
+  public.marcar_terminado(uuid),
+  public.confirmar_terminado(uuid),
+  public.rechazar_terminado(uuid),
   public.cancelar_trabajo(uuid),
   public.contacto_del_trabajo(uuid),
   public.trabajos_para_mi()
