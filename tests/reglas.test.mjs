@@ -418,6 +418,35 @@ describe('calificaciones y recomendados', () => {
   });
 });
 
+describe('borrar cuenta', () => {
+  test('cada uno borra solo su cuenta, y se va todo lo suyo', async () => {
+    await como(MARTA);
+    await db.query('select borrar_mi_cuenta()');
+    await db.exec('reset role');
+    const [{ usuarios, perfiles, trabajos }] = await filas(
+      `select (select count(*) from auth.users where id = $1)::int as usuarios,
+              (select count(*) from perfiles where id = $1)::int as perfiles,
+              (select count(*) from trabajos where cliente_id = $1)::int as trabajos`,
+      [MARTA],
+    );
+    assert.deepEqual({ usuarios, perfiles, trabajos }, { usuarios: 0, perfiles: 0, trabajos: 0 });
+    assert.equal((await filas('select count(*)::int as n from perfiles'))[0].n, 5);
+  });
+
+  test('si se borra un trabajador, sus trabajos quedan sin trabajador elegido', async () => {
+    await como(LUCIA);
+    await db.query('select borrar_mi_cuenta()');
+    await db.exec('reset role');
+    const [t] = await filas('select estado, trabajador_elegido_id from trabajos where id = $1', [LED_DIEGO_TERMINADO]);
+    assert.deepEqual(t, { estado: 'terminado', trabajador_elegido_id: null });
+  });
+
+  test('sin sesión no se puede', async () => {
+    await como(null);
+    await falla('select borrar_mi_cuenta()', [], /permission denied/);
+  });
+});
+
 describe('fotos', () => {
   const PUBLICAR = `insert into trabajos (oficio, descripcion, zona, para_cuando, fotos) values ('Pintura', 'Pintar el frente de la casa.', 'Centro', 'sin_apuro', $1) returning fotos`;
 
