@@ -728,6 +728,77 @@ describe('notificaciones y push', () => {
   });
 });
 
+describe('ranking y calificaciones pendientes', () => {
+  // Crea un trabajo terminado del cliente con el trabajador y la opinión dada.
+  async function terminadoConOpinion(cliente, trabajador, oficio, zona, puntaje) {
+    await db.exec('reset role');
+    const [t] = await filas(
+      `insert into trabajos (cliente_id, oficio, descripcion, zona, para_cuando, estado, trabajador_elegido_id, precio_acordado, terminado_at)
+       values ($1, $2, 'Trabajo terminado de prueba.', $3, 'sin_apuro', 'terminado', $4, 1000, now()) returning id`,
+      [cliente, oficio, zona, trabajador],
+    );
+    await db.query(
+      `insert into opiniones (trabajo_id, cliente_id, trabajador_id, puntaje, comentario) values ($1, $2, $3, $4, 'Opinión de prueba.')`,
+      [t.id, cliente, trabajador, puntaje],
+    );
+    return t.id;
+  }
+
+  test('el puntaje premia tener más reseñas buenas, no solo el promedio', async () => {
+    // Lucía ya tiene una de 5★ (seed). Ramón: diez de 5★ y dos de 4★ → promedio 4,8 pero muchas más reseñas.
+    for (let i = 0; i < 10; i++) await terminadoConOpinion(MARTA, RAMON, 'Plomería', 'Centro', 5);
+    for (let i = 0; i < 2; i++) await terminadoConOpinion(MARTA, RAMON, 'Plomería', 'Centro', 4);
+    await como(MARTA);
+    const rep = await filas(
+      'select trabajador_id, promedio, cantidad_opiniones, puntaje, estrellas_5, estrellas_4 from reputacion_trabajadores where trabajador_id in ($1, $2)',
+      [LUCIA, RAMON],
+    );
+    const lucia = rep.find((r) => r.trabajador_id === LUCIA);
+    const ramon = rep.find((r) => r.trabajador_id === RAMON);
+    assert.ok(Number(lucia.promedio) > Number(ramon.promedio)); // 5 contra 4,8...
+    assert.ok(Number(ramon.puntaje) > Number(lucia.puntaje)); // ...pero Ramón va primero
+    assert.deepEqual([ramon.estrellas_5, ramon.estrellas_4], [10, 2]);
+
+    const recomendados = (await filas('select nombre from trabajadores_recomendados()')).map((t) => t.nombre);
+    assert.deepEqual(recomendados.slice(0, 2), ['Ramón', 'Lucía']);
+    const servicios = (await filas('select nombre from servicios_para_mi()')).map((s) => s.nombre);
+    assert.equal(servicios[0], 'Ramón');
+  });
+
+  test('sin reseñas el puntaje es neutro (3,5) y una mala reseña baja', async () => {
+    await terminadoConOpinion(MARTA, CARLOS, 'Pintura', 'Centro', 1);
+    await como(MARTA);
+    const [sergio] = await filas('select puntaje from reputacion_trabajadores where trabajador_id = $1', [SERGIO]);
+    const [carlos] = await filas('select puntaje from reputacion_trabajadores where trabajador_id = $1', [CARLOS]);
+    assert.equal(Number(sergio.puntaje), 3.5);
+    assert.ok(Number(carlos.puntaje) < 3.5);
+  });
+
+  test('pendientes de calificar: al cliente le faltan opiniones, al trabajador las del cliente', async () => {
+    await db.exec('reset role');
+    await db.query(`update trabajos set estado = 'terminado', terminado_at = now() where id = $1`, [
+      REVOQUE_MARTA_POR_CONFIRMAR,
+    ]);
+    await como(MARTA);
+    assert.deepEqual(
+      (await filas('select trabajo_id, nombre from pendientes_de_calificar()')).map((p) => [p.trabajo_id, p.nombre]),
+      [[REVOQUE_MARTA_POR_CONFIRMAR, 'Carlos']],
+    );
+    await como(CARLOS);
+    assert.deepEqual(
+      (await filas('select trabajo_id, nombre from pendientes_de_calificar()')).map((p) => [p.trabajo_id, p.nombre]),
+      [[REVOQUE_MARTA_POR_CONFIRMAR, 'Marta']],
+    );
+    await db.query(`insert into calificaciones_clientes (trabajo_id, cliente_id, puntaje) values ($1, $2, 5)`, [
+      REVOQUE_MARTA_POR_CONFIRMAR,
+      MARTA,
+    ]);
+    assert.equal((await filas('select * from pendientes_de_calificar()')).length, 0);
+    await como(DIEGO); // el trabajo terminado del seed ya está calificado por los dos
+    assert.equal((await filas('select * from pendientes_de_calificar()')).length, 0);
+  });
+});
+
 describe('borrar cuenta', () => {
   test('cada uno borra solo su cuenta, y se va todo lo suyo', async () => {
     await como(MARTA);

@@ -5,6 +5,14 @@ La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/l
 
 ## 2026-10-01
 
+### Ranking por calificaciones y pendientes de calificar
+
+- `reputacion_trabajadores` suma `puntaje` (promedio bayesiano: como si todos arrancaran con 5 reseñas de 3,5★, así pesa la cantidad y no solo el promedio) y `estrellas_5` a `estrellas_1` para las barras.
+- `trabajadores_recomendados()` y `servicios_para_mi()` ordenan por `puntaje`.
+- `pendientes_de_calificar()`: trabajos terminados que el usuario todavía no calificó (cliente u trabajador).
+- Auth: URLs de retorno permitidas para el link de recuperar contraseña (`exp://**`, `laburapp://**`, `http://localhost:8081/**`) y contraseña mínima de 8, aplicadas con `supabase config push`. Las plantillas de mail quedaron comentadas en `config.toml` hasta tener SMTP propio (si no, el push de config falla).
+- 3 tests nuevos (68 en total).
+
 ### Notificaciones y push
 
 - Tabla `notificaciones` (la campanita): cada uno ve y marca solo las suyas; las crean triggers, no la app.
