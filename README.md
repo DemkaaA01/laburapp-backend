@@ -1,0 +1,72 @@
+# Laburapp · Backend
+
+Backend de [Laburapp](../README.md), la app de oficios de San Nicolás. Es un proyecto de **Supabase**
+(Postgres + Auth + Storage): no hay servidor propio. La app habla directo con Supabase y la seguridad
+vive en la base (RLS en todas las tablas + funciones que validan cada cambio de estado).
+
+## Estructura
+
+```
+supabase/
+  config.toml        configuración del proyecto (local y valores base)
+  migrations/        cambios de la base, en orden. NUNCA editar una ya aplicada: crear una nueva
+  seed.sql           datos de prueba (solo desarrollo)
+  functions/         Edge Functions (código de servidor, para más adelante: pagos, avisos)
+tests/
+  reglas.test.mjs            tests de seguridad y reglas de negocio
+  supabase-simulado.sql      lo mínimo de Supabase para correr los tests sin Docker
+```
+
+## Modelo
+
+| Tabla | Qué guarda | Quién la ve |
+|---|---|---|
+| `perfiles` | rol, nombre, apellido, oficios, zonas, comercio | usuarios con sesión |
+| `datos_privados` | WhatsApp y sexo | solo el dueño |
+| `trabajos` | lo que publica el cliente, estado, trabajador elegido | el cliente; trabajadores si está abierto, si se postularon o si los eligieron |
+| `postulaciones` | precio y mensaje del trabajador | el trabajador y el cliente del trabajo |
+| `opiniones` | puntaje 1–5 y comentario, una por trabajo | usuarios con sesión |
+
+Funciones que usa la app (`supabase.rpc(...)`):
+
+| Función | Quién | Qué hace |
+|---|---|---|
+| `trabajos_para_mi()` | trabajador | trabajos abiertos de sus oficios y zonas |
+| `trabajadores_recomendados(p_limite)` | cliente | trabajadores de sus rubros y su zona, mejor puntuados primero |
+| `elegir_postulacion(p_postulacion_id)` | cliente | asigna el trabajo y fija el precio acordado |
+| `contacto_del_trabajo(p_trabajo_id)` | cliente o trabajador elegido | nombre y WhatsApp de la otra parte |
+| `terminar_trabajo(p_trabajo_id)` | cliente | asignado → terminado (habilita la opinión) |
+| `cancelar_trabajo(p_trabajo_id)` | cliente | abierto o asignado → cancelado |
+
+Vista `reputacion_trabajadores`: promedio y cantidad de opiniones por trabajador.
+Storage: bucket privado `fotos-trabajos`, cada usuario sube a la carpeta `{su id}/`.
+
+## Uso
+
+```bash
+npm install
+npm test                 # tests de reglas (PGlite, no hace falta Docker)
+```
+
+### Aplicar en el proyecto de desarrollo (sin Docker)
+
+```bash
+npx supabase login
+npx supabase link --project-ref <ref-de-laburapp-dev>
+npx supabase db push --include-seed   # migraciones + datos de prueba
+npm run db:types                      # tipos TypeScript para la app
+```
+
+### Local completo (con Docker Desktop)
+
+```bash
+npm start          # levanta Supabase local
+npm run db:reset   # recrea la base con migraciones + seed
+```
+
+## Reglas
+
+- Proyectos separados: `laburapp-dev` y `laburapp-prod`. El proyecto de la preinscripción no se toca.
+- Cada cambio de base es una migración nueva (`npx supabase migration new <nombre>`), con su test.
+- `seed.sql` es solo para desarrollo: nunca `--include-seed` contra producción.
+- Usuarios de prueba: ver el encabezado de `seed.sql` (contraseña `laburapp123`).

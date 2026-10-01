@@ -1,0 +1,20 @@
+{
+  "name": "laburapp-backend",
+  "version": "1.0.0",
+  "description": "Backend de Laburapp (Supabase): migraciones, reglas de seguridad, funciones y datos de prueba.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "db:types": "supabase gen types typescript --linked > ../src/types/database.ts",
+    "start": "supabase start",
+    "stop": "supabase stop"
+  },
+  "license": "UNLICENSED",
+  "type": "module",
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "supabase": "^2.119.0"
+  },
+  "private": true
+}
