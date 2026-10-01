@@ -105,4 +105,4 @@ values
   ('44444444-4444-4444-8444-444444444444', 'Electricidad', 'Electricista matriculada',
    'Instalaciones nuevas, tableros, disyuntores, cambio de luminarias a LED. Presupuesto sin cargo.', 15000, 'visita', '{Toda la ciudad}'),
   ('55555555-5555-4555-8555-555555555555', 'Plomería', 'Plomería y destapaciones',
-   'Pérdidas, canillas, sifones, termotanques y destapaciones. Voy en el día.', null, null, '{Zona Norte,Centro}');
+   'Pérdidas, canillas, sifones, termotanques y destapaciones. Voy en el día.', 12000, 'visita', '{Zona Norte,Centro}');

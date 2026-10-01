@@ -491,12 +491,21 @@ describe('servicios y pedidos directos', () => {
     await falla(PUBLICAR_SERVICIO, ['Pintura', ['Centro']], /row-level security/);
   });
 
+  test('el servicio tiene que tener precio de referencia', async () => {
+    await como(CARLOS);
+    await falla(
+      `insert into servicios (oficio, titulo, descripcion, zonas) values ('Pintura', 'Pintura general', 'Pinto todo tipo de ambientes.', '{Centro}')`,
+      [],
+      /servicios_con_precio/,
+    );
+  });
+
   test('precio: los dos datos o ninguno', async () => {
     await como(CARLOS);
     await falla(
       `insert into servicios (oficio, titulo, descripcion, precio_desde, zonas) values ('Pintura', 'Pintura general', 'Pinto todo tipo de ambientes.', 1000, '{Centro}')`,
       [],
-      /servicios_precio/,
+      /servicios_(con_)?precio/,
     );
   });
 
