@@ -5,6 +5,15 @@ La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/l
 
 ## 2026-10-01
 
+### Notificaciones y push
+
+- Tabla `notificaciones` (la campanita): cada uno ve y marca solo las suyas; las crean triggers, no la app.
+- Tabla `dispositivos` (tokens de Expo) manejada solo con `registrar_dispositivo()` (reasigna el token si el teléfono cambia de cuenta) y `olvidar_dispositivo()`.
+- Triggers que avisan: trabajo nuevo (a los trabajadores de ese oficio y zona), pedido directo, precio nuevo, elegido / no elegido, terminado, confirmado, rechazado, cancelado y calificaciones.
+- Al crearse una notificación se manda el push a Expo con **pg_net** (`net.http_post`). Si el envío falla, igual se guarda todo.
+- pg_net movido al schema `extensions` (recomendación de Supabase).
+- 11 tests nuevos (65 en total); en los tests pg_net está simulado y guarda lo que se mandaría.
+
 ### Revisión automática
 
 - **GitHub Actions** (`.github/workflows/revision.yml`): en cada push a `main` y en cada pull request corren los 54 tests de reglas con PGlite (sin Docker ni proyecto de Supabase).

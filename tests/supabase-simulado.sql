@@ -58,6 +58,22 @@ as $$
   )::uuid
 $$;
 
+-- pg_net simulado: en vez de mandar el pedido HTTP, lo guarda para revisarlo.
+create schema net;
+create table net.enviados (id bigserial primary key, url text, body jsonb, headers jsonb);
+create function net.http_post(
+  url text,
+  body jsonb default '{}',
+  params jsonb default '{}',
+  headers jsonb default '{}',
+  timeout_milliseconds integer default 5000
+)
+returns bigint
+language sql
+as $$
+  insert into net.enviados (url, body, headers) values (url, body, headers) returning id
+$$;
+
 create schema storage;
 grant usage on schema storage to anon, authenticated, service_role;
 

@@ -579,6 +579,155 @@ describe('servicios y pedidos directos', () => {
   });
 });
 
+describe('notificaciones y push', () => {
+  const TOKEN_CARLOS = 'ExponentPushToken[carlos-iphone]';
+  const avisos = async (usuario, tipo) => {
+    await db.exec('reset role');
+    return filas('select * from notificaciones where usuario_id = $1 and tipo = $2 order by created_at', [usuario, tipo]);
+  };
+  const publicar = async (quien, oficio, zona, extra = {}) => {
+    await como(quien);
+    const [t] = await filas(
+      `insert into trabajos (oficio, descripcion, zona, para_cuando, trabajador_invitado_id)
+       values ($1, 'Trabajo de prueba para avisos.', $2, 'sin_apuro', $3) returning *`,
+      [oficio, zona, extra.invitado ?? null],
+    );
+    return t;
+  };
+
+  test('trabajo nuevo: avisa a los trabajadores de ese oficio y esa zona', async () => {
+    const t = await publicar(MARTA, 'Pintura', 'Centro');
+    assert.equal((await avisos(CARLOS, 'trabajo_nuevo')).filter((n) => n.trabajo_id === t.id).length, 1);
+    assert.equal((await avisos(SERGIO, 'trabajo_nuevo')).filter((n) => n.trabajo_id === t.id).length, 0); // Alrededores
+    assert.equal((await avisos(LUCIA, 'trabajo_nuevo')).filter((n) => n.trabajo_id === t.id).length, 0); // otro oficio
+  });
+
+  test('pedido directo: avisa solo al invitado', async () => {
+    const t = await publicar(MARTA, 'Pintura', 'Centro', { invitado: CARLOS });
+    const [n] = (await avisos(CARLOS, 'pedido_directo')).filter((x) => x.trabajo_id === t.id);
+    assert.equal(n.titulo, 'Marta te pidió presupuesto');
+    assert.equal((await avisos(CARLOS, 'trabajo_nuevo')).filter((x) => x.trabajo_id === t.id).length, 0);
+  });
+
+  test('precio nuevo: avisa al cliente con el precio', async () => {
+    await como(RAMON);
+    await db.query(`insert into postulaciones (trabajo_id, precio) values ($1, 45000)`, [GAS_DIEGO]);
+    const [n] = (await avisos(DIEGO, 'precio_nuevo')).filter((x) => x.trabajo_id === GAS_DIEGO);
+    assert.equal(n.titulo, 'Ramón te pasó precio: $ 45.000');
+  });
+
+  test('elegir: avisa al elegido y a los que no eligieron', async () => {
+    await db.query(`insert into postulaciones (trabajo_id, trabajador_id, precio) values ($1, $2, 200000)`, [
+      PINTURA_MARTA,
+      SERGIO,
+    ]);
+    const id = (await filas('select id from postulaciones where trabajo_id = $1 and trabajador_id = $2', [PINTURA_MARTA, CARLOS]))[0].id;
+    await como(MARTA);
+    await db.query('select elegir_postulacion($1)', [id]);
+    const [elegido] = await avisos(CARLOS, 'elegido');
+    assert.equal(elegido.titulo, '¡Marta te eligió!');
+    assert.match(elegido.cuerpo, /\$ 180\.000/);
+    assert.equal((await avisos(SERGIO, 'no_elegido')).length, 1);
+  });
+
+  test('terminado: avisa al cliente; confirmado o rechazado: al trabajador', async () => {
+    await como(RAMON);
+    await db.query('select marcar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.equal((await avisos(MARTA, 'marcado_terminado')).length, 1);
+    await como(MARTA);
+    await db.query('select rechazar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.equal((await avisos(RAMON, 'rechazado')).length, 1);
+    await como(RAMON);
+    await db.query('select marcar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    await como(MARTA);
+    await db.query('select confirmar_terminado($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.equal((await avisos(RAMON, 'confirmado')).length, 1);
+  });
+
+  test('cancelar: avisa a los que pasaron precio', async () => {
+    await como(MARTA);
+    await db.query('select cancelar_trabajo($1)', [ELECTRICIDAD_MARTA]);
+    assert.equal((await avisos(LUCIA, 'cancelado')).length, 1);
+  });
+
+  test('calificaciones: avisa a quien recibe las estrellas', async () => {
+    await db.exec('reset role');
+    await db.query(`update trabajos set estado = 'terminado' where id = $1`, [REVOQUE_MARTA_POR_CONFIRMAR]);
+    await como(MARTA);
+    await db.query(`insert into opiniones (trabajo_id, trabajador_id, puntaje, comentario) values ($1, $2, 5, 'Excelente trabajo, muy prolijo.')`, [
+      REVOQUE_MARTA_POR_CONFIRMAR,
+      CARLOS,
+    ]);
+    assert.equal((await avisos(CARLOS, 'opinion'))[0].titulo, 'Marta te calificó con 5 ★');
+    await como(CARLOS);
+    await db.query(`insert into calificaciones_clientes (trabajo_id, cliente_id, puntaje) values ($1, $2, 4)`, [
+      REVOQUE_MARTA_POR_CONFIRMAR,
+      MARTA,
+    ]);
+    assert.equal((await avisos(MARTA, 'calificacion'))[0].titulo, 'Carlos te calificó con 4 ★');
+  });
+
+  test('cada uno ve y marca solo las suyas, y no puede inventar ni cambiar el texto', async () => {
+    await publicar(MARTA, 'Pintura', 'Centro');
+    await como(LUCIA);
+    assert.equal((await filas('select * from notificaciones where usuario_id = $1', [CARLOS])).length, 0);
+    await como(CARLOS);
+    const mias = await filas('select id from notificaciones');
+    assert.ok(mias.length > 0);
+    await db.query('select marcar_notificaciones_leidas()');
+    assert.equal((await filas('select id from notificaciones where not leida')).length, 0);
+    await falla(`update notificaciones set titulo = 'Trucho'`, [], /permission denied/);
+    await falla(
+      `insert into notificaciones (usuario_id, tipo, titulo, cuerpo) values ($1, 'x', 'x', 'x')`,
+      [CARLOS],
+      /permission denied/,
+    );
+    await como(null);
+    await falla('select * from notificaciones', [], /permission denied/);
+  });
+
+  test('push: se manda al teléfono registrado, con el link al trabajo', async () => {
+    await como(CARLOS);
+    await db.query(`select registrar_dispositivo($1, 'ios')`, [TOKEN_CARLOS]);
+    await db.exec('reset role');
+    await db.exec('delete from net.enviados');
+    const t = await publicar(MARTA, 'Pintura', 'Centro');
+    await db.exec('reset role');
+    const [envio] = await filas('select url, body from net.enviados');
+    assert.equal(envio.url, 'https://exp.host/--/api/v2/push/send');
+    assert.equal(envio.body[0].to, TOKEN_CARLOS);
+    assert.equal(envio.body[0].title, 'Trabajo nuevo de pintura en Centro');
+    assert.equal(envio.body[0].data.url, `/trabajo/${t.id}`);
+  });
+
+  test('push: al cerrar sesión deja de llegar, y el token pasa a quien entre después', async () => {
+    await como(CARLOS);
+    await db.query(`select registrar_dispositivo($1, 'ios')`, [TOKEN_CARLOS]);
+    await db.query('select olvidar_dispositivo($1)', [TOKEN_CARLOS]);
+    await db.exec('reset role');
+    assert.equal((await filas('select * from dispositivos')).length, 0);
+
+    await como(CARLOS);
+    await db.query(`select registrar_dispositivo($1, 'ios')`, [TOKEN_CARLOS]);
+    await como(LUCIA); // mismo teléfono, otra cuenta
+    await db.query(`select registrar_dispositivo($1, 'ios')`, [TOKEN_CARLOS]);
+    await db.exec('reset role');
+    assert.deepEqual(await filas('select usuario_id from dispositivos'), [{ usuario_id: LUCIA }]);
+    await falla(`select registrar_dispositivo('cualquiera', 'ios')`, [], /dispositivos_token_check/);
+  });
+
+  test('push: si falla el envío, igual se crea el trabajo y la notificación', async () => {
+    await como(CARLOS);
+    await db.query(`select registrar_dispositivo($1, 'ios')`, [TOKEN_CARLOS]);
+    await db.exec('reset role');
+    await db.exec(`create or replace function net.http_post(url text, body jsonb default '{}', params jsonb default '{}',
+      headers jsonb default '{}', timeout_milliseconds integer default 5000) returns bigint language plpgsql
+      as $$ begin raise exception 'sin internet'; end $$`);
+    const t = await publicar(MARTA, 'Pintura', 'Centro');
+    assert.equal((await avisos(CARLOS, 'trabajo_nuevo')).filter((n) => n.trabajo_id === t.id).length, 1);
+  });
+});
+
 describe('borrar cuenta', () => {
   test('cada uno borra solo su cuenta, y se va todo lo suyo', async () => {
     await como(MARTA);

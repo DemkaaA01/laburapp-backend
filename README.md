@@ -29,11 +29,15 @@ tests/
 | `servicios` | avisos del trabajador: oficio, título, descripción, precio desde, zonas, fotos, activo (hasta 10) | activos: usuarios con sesión; pausados: solo el dueño |
 | `galeria` | fotos de trabajos hechos (solo trabajadores, hasta 12) | usuarios con sesión |
 | `calificaciones_clientes` | del trabajador al cliente: solo estrellas 1–5, una por trabajo | usuarios con sesión |
+| `notificaciones` | avisos de cada usuario (la campanita); los crean triggers y disparan el push | solo el dueño |
+| `dispositivos` | tokens de push de Expo de cada teléfono | nadie directo: solo por funciones |
 
 Funciones que usa la app (`supabase.rpc(...)`):
 
 | Función | Quién | Qué hace |
 |---|---|---|
+| `registrar_dispositivo(p_token, p_plataforma)` / `olvidar_dispositivo(p_token)` | cualquiera con sesión | guarda u olvida el token de push de este teléfono |
+| `marcar_notificaciones_leidas()` | cualquiera con sesión | marca todos sus avisos como leídos |
 | `trabajos_para_mi()` | trabajador | trabajos abiertos de sus oficios y zonas |
 | `servicios_para_mi(p_oficio)` | cliente | servicios activos que llegan a su zona, mejor puntuados primero |
 | `trabajadores_recomendados(p_limite)` | cliente | trabajadores de sus rubros y su zona, mejor puntuados primero |
