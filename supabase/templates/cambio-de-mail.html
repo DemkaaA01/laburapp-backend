@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Confirmá tu nuevo mail en Laburapp</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background-color:#F4F8F8;">
+<div style="display:none;max-height:0;overflow:hidden;">Tocá el botón para confirmar tu nuevo mail.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F8F8;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#FFFFFF;border-radius:20px;overflow:hidden;">
+        <tr>
+          <td style="background-color:#0B6E75;padding:28px 28px 30px 28px;">
+            <div style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-weight:800;font-size:30px;line-height:32px;letter-spacing:-1px;color:#FFFFFF;">laburapp</div>
+            <div style="font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:15px;line-height:20px;color:#D5ECEE;padding-top:4px;">La app de oficios de San Nicolás</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 28px 8px 28px;font-family:'Outfit',Arial,Helvetica,sans-serif;color:#0B2E33;">
+            <h1 style="margin:0 0 12px 0;font-size:28px;line-height:32px;font-weight:800;letter-spacing:-0.6px;color:#0B2E33;">Confirmá tu nuevo mail</h1>
+            <p style="margin:0 0 24px 0;font-size:18px;line-height:26px;color:#4A6568;">Pediste cambiar el mail de tu cuenta de <strong style="color:#0B2E33;">{{ .Email }}</strong> a <strong style="color:#0B2E33;">{{ .NewEmail }}</strong>. Tocá el botón para confirmarlo.</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="left" style="padding:0 28px 28px 28px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" style="background-color:#FFB547;border-radius:16px;">
+                  <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block;padding:18px 32px;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:20px;line-height:22px;font-weight:800;color:#0B2E33;text-decoration:none;border-radius:16px;">Confirmar mi nuevo mail</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 28px 28px 28px;font-family:'Outfit',Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:15px;line-height:22px;color:#4A6568;">Si el botón no anda, copiá este link en el navegador:<br><a href="{{ .ConfirmationURL }}" style="color:#0B6E75;word-break:break-all;">{{ .ConfirmationURL }}</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:20px 28px;background-color:#E3F1F2;font-family:'Outfit',Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:14px;line-height:20px;color:#4A6568;">Si no pediste este cambio, ignorá este mail y tu cuenta sigue igual.</p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:16px 0 0 0;font-family:'Outfit',Arial,Helvetica,sans-serif;font-size:13px;line-height:18px;color:#4A6568;">Laburapp · San Nicolás de los Arroyos</p>
+    </td>
+  </tr>
+</table>
+</body>
+</html>
