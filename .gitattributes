@@ -1,0 +1,5 @@
+# Siempre fin de línea LF (Linux), también en Windows: así Prettier y GitHub ven lo mismo.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
