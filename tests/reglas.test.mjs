@@ -125,9 +125,10 @@ describe('registro y perfiles', () => {
     await falla('select * from reputacion_trabajadores', [], /permission denied/);
   });
 
-  test('con sesión se ven todos los perfiles, pero solo los datos privados propios', async () => {
+  test('con sesión se ven los trabajadores y uno mismo, pero solo los datos privados propios', async () => {
     await como(MARTA);
-    assert.equal((await filas('select id from perfiles')).length, 6);
+    const ids = (await filas('select id from perfiles')).map((p) => p.id).sort();
+    assert.deepEqual(ids, [MARTA, CARLOS, LUCIA, RAMON, SERGIO].sort()); // Diego (otro cliente) no
     const privados = await filas('select id, whatsapp from datos_privados');
     assert.deepEqual(privados, [{ id: MARTA, whatsapp: '3364111111' }]);
   });
@@ -399,6 +400,8 @@ describe('calificaciones y recomendados', () => {
     const [lucia] = await filas('select * from reputacion_trabajadores where trabajador_id = $1', [LUCIA]);
     assert.equal(lucia.cantidad_opiniones, 1);
     assert.equal(Number(lucia.promedio), 5);
+    // La reputación de un cliente la ve quien tiene relación con él (Lucía trabajó para Diego).
+    await como(LUCIA);
     const [diego] = await filas('select * from reputacion_clientes where cliente_id = $1', [DIEGO]);
     assert.equal(diego.cantidad_calificaciones, 1);
     assert.equal(Number(diego.promedio), 5);
@@ -796,6 +799,145 @@ describe('ranking y calificaciones pendientes', () => {
     assert.equal((await filas('select * from pendientes_de_calificar()')).length, 0);
     await como(DIEGO); // el trabajo terminado del seed ya está calificado por los dos
     assert.equal((await filas('select * from pendientes_de_calificar()')).length, 0);
+  });
+});
+
+describe('seguridad: perfiles, bloqueos, reportes, fotos y límites', () => {
+  const nuevoTrabajo = async (quien, oficio = 'Pintura', zona = 'Centro', invitado = null) => {
+    await como(quien);
+    const [t] = await filas(
+      `insert into trabajos (oficio, descripcion, zona, para_cuando, trabajador_invitado_id)
+       values ($1, 'Trabajo de prueba de seguridad.', $2, 'sin_apuro', $3) returning id`,
+      [oficio, zona, invitado],
+    );
+    return t.id;
+  };
+
+  test('los helpers de las reglas no están en la API (schema privado)', async () => {
+    await como(MARTA);
+    await falla('select public.mi_rol()', [], /does not exist/);
+    await falla('select public.puedo_postularme($1)', [PINTURA_MARTA], /does not exist/);
+  });
+
+  test('un cliente no ve a otros clientes; un trabajador ve a los clientes con pedidos abiertos', async () => {
+    await como(DIEGO);
+    assert.equal((await filas('select id from perfiles where id = $1', [MARTA])).length, 0);
+    await como(CARLOS);
+    assert.equal((await filas('select id from perfiles where id = $1', [MARTA])).length, 1);
+  });
+
+  test('un cliente sin pedidos ni relación no lo ve ningún trabajador', async () => {
+    await db.exec('reset role');
+    const [nuevo] = await filas(
+      `insert into auth.users (id, email, raw_user_meta_data) values (gen_random_uuid(), 'nueva@laburapp.test', $1) returning id`,
+      [{ rol: 'cliente', nombre: 'Nueva', apellido: 'Clienta', whatsapp: '3364000000', sexo: 'mujer', oficios: ['Pintura'], zonas: ['Centro'] }],
+    );
+    await como(CARLOS);
+    assert.equal((await filas('select id from perfiles where id = $1', [nuevo.id])).length, 0);
+    await como(nuevo.id);
+    assert.equal((await filas('select id from perfiles where id = $1', [nuevo.id])).length, 1);
+  });
+
+  test('las opiniones muestran al autor como "Nombre I."', async () => {
+    await como(MARTA);
+    const [o] = await filas('select autor, puntaje from opiniones_de($1)', [LUCIA]);
+    assert.deepEqual(o, { autor: 'Diego F.', puntaje: 5 });
+    await como(null);
+    await falla('select * from opiniones_de($1)', [LUCIA], /permission denied/);
+  });
+
+  test('bloquear: no se ven los pedidos, no se pasa precio, no se avisa, no aparece en recomendados', async () => {
+    await como(MARTA);
+    await db.query('insert into bloqueos (bloqueado_id) values ($1)', [CARLOS]);
+    const t = await nuevoTrabajo(MARTA);
+    await db.exec('reset role');
+    assert.equal((await filas(`select * from notificaciones where usuario_id = $1 and trabajo_id = $2`, [CARLOS, t])).length, 0);
+
+    await como(CARLOS);
+    assert.equal((await filas('select id from trabajos where id = $1', [t])).length, 0);
+    assert.ok(!(await filas('select id from trabajos_para_mi()')).some((x) => x.id === t));
+    await falla(`insert into postulaciones (trabajo_id, precio) values ($1, 1000)`, [t], /row-level security/);
+
+    await como(MARTA);
+    assert.ok(!(await filas('select nombre from trabajadores_recomendados()')).some((x) => x.nombre === 'Carlos'));
+    await falla(
+      `insert into trabajos (oficio, descripcion, zona, para_cuando, trabajador_invitado_id) values ('Pintura', 'Pedido directo bloqueado.', 'Centro', 'sin_apuro', $1)`,
+      [CARLOS],
+      /row-level security/,
+    );
+
+    await db.query('delete from bloqueos where bloqueado_id = $1', [CARLOS]);
+    await como(CARLOS);
+    assert.equal((await filas('select id from trabajos where id = $1', [t])).length, 1);
+  });
+
+  test('el bloqueo funciona en los dos sentidos y solo lo ve quien bloqueó', async () => {
+    await como(CARLOS); // el trabajador bloquea a la clienta
+    await db.query('insert into bloqueos (bloqueado_id) values ($1)', [MARTA]);
+    const t = await nuevoTrabajo(MARTA);
+    await como(CARLOS);
+    assert.equal((await filas('select id from trabajos where id = $1', [t])).length, 0);
+    await como(MARTA);
+    assert.equal((await filas('select * from bloqueos')).length, 0);
+    await falla('insert into bloqueos (bloqueado_id) values ($1)', [MARTA], /bloqueos_no_a_si_mismo/);
+  });
+
+  test('mis_bloqueados: cada uno ve el nombre de los que bloqueó, aunque sean clientes', async () => {
+    await como(CARLOS);
+    await db.query('insert into bloqueos (bloqueado_id) values ($1)', [DIEGO]);
+    assert.deepEqual(
+      (await filas('select nombre, rol from mis_bloqueados()')).map((b) => [b.nombre, b.rol]),
+      [['Diego', 'cliente']],
+    );
+    await como(DIEGO);
+    assert.equal((await filas('select * from mis_bloqueados()')).length, 0);
+  });
+
+  test('reportes: cada uno reporta y ve solo los suyos', async () => {
+    await como(MARTA);
+    await db.query(`insert into reportes (reportado_id, motivo, detalle) values ($1, 'no_se_presento', 'No vino el día acordado.')`, [
+      RAMON,
+    ]);
+    assert.equal((await filas('select * from reportes')).length, 1);
+    await falla(`insert into reportes (reportado_id, motivo) values ($1, 'cualquiera')`, [RAMON], /reportes_motivo_check/);
+    await falla(`insert into reportes (reportado_id, motivo) values ($1, 'spam')`, [MARTA], /reportes_no_a_si_mismo/);
+    await falla(
+      `insert into reportes (autor_id, reportado_id, motivo) values ($1, $2, 'spam')`,
+      [DIEGO, RAMON],
+      /permission denied/,
+    );
+    await como(RAMON);
+    assert.equal((await filas('select * from reportes')).length, 0);
+  });
+
+  test('fotos de pedidos: solo las ve quien puede ver el trabajo', async () => {
+    await db.exec('reset role');
+    const ruta = `${MARTA}/frente-privado.jpg`;
+    await db.query(`insert into storage.objects (bucket_id, name, owner) values ('fotos-trabajos', $1, $2)`, [ruta, MARTA]);
+    await db.query('update trabajos set fotos = array[$1] where id = $2', [ruta, PINTURA_MARTA]);
+    await como(CARLOS);
+    assert.equal((await filas('select name from storage.objects where name = $1', [ruta])).length, 1);
+    await como(DIEGO);
+    assert.equal((await filas('select name from storage.objects where name = $1', [ruta])).length, 0);
+  });
+
+  test('límite: hasta 10 trabajos por día por cliente', async () => {
+    await como(MARTA);
+    const [{ hoy }] = await filas(`select count(*)::int as hoy from trabajos where created_at > now() - interval '1 day'`);
+    for (let i = hoy; i < 10; i++) {
+      await db.query(`insert into trabajos (oficio, descripcion, zona, para_cuando) values ('Pintura', 'Uno más de prueba.', 'Centro', 'sin_apuro')`);
+    }
+    await falla(
+      `insert into trabajos (oficio, descripcion, zona, para_cuando) values ('Pintura', 'El que sobra.', 'Centro', 'sin_apuro')`,
+      [],
+      /máximo de 10 trabajos por día/,
+    );
+  });
+
+  test('límite: hasta 10 reportes por día', async () => {
+    await como(MARTA);
+    for (let i = 0; i < 10; i++) await db.query(`insert into reportes (reportado_id, motivo) values ($1, 'spam')`, [RAMON]);
+    await falla(`insert into reportes (reportado_id, motivo) values ($1, 'spam')`, [RAMON], /máximo de 10 reportes/);
   });
 });
 
