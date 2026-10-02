@@ -332,6 +332,10 @@ if (valores) {
 }
 rmSync(respaldo, { force: true });
 console.log(`Teléfonos registrados restaurados: ${dispositivos.length}`);
+// Fechas repartidas en el tiempo: si todo es de hoy, los clientes de prueba
+// llegan al límite diario de trabajos y no se puede probar publicar.
+sql(readFileSync(new URL('./repartir-fechas.sql', import.meta.url), 'utf8'));
+console.log('Fechas repartidas en las últimas semanas');
 // Los avisos de la carga quedan como leídos para no llenar la campanita.
 sql(`update notificaciones set leida = true where not leida and usuario_id in (select id from auth.users where email like '%@laburapp.test')`);
 if (fallo) process.exit(1);

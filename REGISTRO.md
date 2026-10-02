@@ -5,6 +5,17 @@ La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/l
 
 ## 2026-10-02
 
+### Seguridad
+
+- **Revisión con `supabase db advisors`:** sin errores. Los helpers que usan las reglas (`mi_rol`, `puedo_postularme`, `invitacion_valida`, `cantidad_servicios`, etc.) se movieron al schema **`privado`**, que no está expuesto en la API: antes cualquiera podía llamarlos por `/rest/v1/rpc`. Quedan 11 avisos por funciones que la app llama a propósito (elegir, cancelar, contacto, borrar cuenta…) y que validan quién sos adentro. "Leaked password protection" requiere plan pago.
+- **Perfiles de clientes privados:** antes cualquier usuario con sesión podía listar a todos los clientes (nombre, zona, comercio). Ahora a un cliente lo ve él mismo y quien tiene relación con un trabajo suyo (elegido, invitado, quien le pasó precio o un trabajador que ve su pedido abierto). Los trabajadores siguen públicos. `opiniones_de()` muestra al autor como "Marta G.".
+- **Fotos de pedidos:** antes se podían listar todas las del bucket privado; ahora solo las de trabajos que podés ver.
+- **Bloqueos** (`bloqueos`, `privado.hay_bloqueo`, `mis_bloqueados()`): en los dos sentidos, ocultan pedidos abiertos y servicios, impiden pasar precio y pedir presupuesto, no se avisan los trabajos nuevos y salen de los recomendados.
+- **Reportes** (`reportes`): motivo y detalle, solo los ve quien reporta; se revisan desde el panel.
+- **Límites anti-spam** (solo para usuarios de la app): 10 trabajos por día y 20 abiertos por cliente, 40 precios por día por trabajador, 10 reportes por día.
+- `scripts/repartir-fechas.sql`: reparte en las últimas semanas las fechas de los datos de demostración (si no, los clientes de prueba quedaban en el límite diario). Lo corre `npm run demo` al final.
+- 11 tests nuevos (79 en total), con prueba de que fallan si se saca la regla de bloqueos.
+
 ### Datos de demostración
 
 - `scripts/datos-demo.mjs` (`npm run demo`): 12 trabajadores (todos los oficios y zonas, con calificaciones de 1 a 5★ y uno sin reseñas), 6 clientes (uno comercio), servicios con fotos, galerías, 38 trabajos terminados y calificados recorriendo el flujo completo por la API, y 20 trabajos abiertos con fotos y precios.
