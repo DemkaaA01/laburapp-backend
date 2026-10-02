@@ -8,7 +8,8 @@
     "db:push": "supabase db push",
     "db:types": "supabase gen types typescript --linked > ../src/types/database.ts",
     "start": "supabase start",
-    "stop": "supabase stop"
+    "stop": "supabase stop",
+    "demo": "node scripts/datos-demo.mjs"
   },
   "license": "UNLICENSED",
   "type": "module",

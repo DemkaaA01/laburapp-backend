@@ -3,6 +3,14 @@
 Todo lo que se fue haciendo en la base (Supabase), del más nuevo al más viejo.
 La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/laburapp-app/blob/main/REGISTRO.md).
 
+## 2026-10-02
+
+### Datos de demostración
+
+- `scripts/datos-demo.mjs` (`npm run demo`): 12 trabajadores (todos los oficios y zonas, con calificaciones de 1 a 5★ y uno sin reseñas), 6 clientes (uno comercio), servicios con fotos, galerías, 38 trabajos terminados y calificados recorriendo el flujo completo por la API, y 20 trabajos abiertos con fotos y precios.
+- Idempotente, con reintentos (la CLI a veces tarda en conectar) y protegido: solo corre contra el proyecto vinculado y nunca contra el de la preinscripción. Mientras carga, saca los teléfonos registrados para no mandar decenas de avisos; la app los vuelve a registrar al abrirse.
+- Cargado en `laburapp-dev`.
+
 ## 2026-10-01
 
 ### Ranking por calificaciones y pendientes de calificar

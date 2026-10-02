@@ -61,6 +61,17 @@ npm test                 # tests de reglas (PGlite, no hace falta Docker)
 ```
 
 GitHub Actions corre los tests en cada push a `main` y en cada pull request.
+
+### Datos de demostración (solo desarrollo)
+
+```bash
+SUPABASE_URL=https://<ref>.supabase.co SUPABASE_PUBLISHABLE_KEY=sb_publishable_… npm run demo
+```
+
+Carga 12 trabajadores y 6 clientes (`<nombre>@laburapp.test`, contraseña `laburapp123`) con foto, servicios,
+galería, ~40 trabajos terminados con calificaciones variadas y ~20 trabajos abiertos con fotos y precios. Pasa por la
+API con los permisos de cada usuario (solo el alta de usuarios es por SQL). Se puede correr de nuevo sin duplicar
+nada, y se niega a correr contra un proyecto que no sea el vinculado o contra el de la preinscripción.
 Lo que se fue haciendo está en [REGISTRO.md](REGISTRO.md).
 
 ### Aplicar en el proyecto de desarrollo (sin Docker)
