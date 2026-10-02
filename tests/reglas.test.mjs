@@ -992,3 +992,135 @@ describe('fotos', () => {
     );
   });
 });
+
+describe('chat', () => {
+  const ABRIR = 'select abrir_conversacion($1, $2) as id';
+  const ESCRIBIR = 'insert into mensajes (conversacion_id, texto) values ($1, $2) returning autor_id';
+
+  async function abrir(usuario, trabajo, trabajador) {
+    await como(usuario);
+    return (await filas(ABRIR, [trabajo, trabajador]))[0].id;
+  }
+
+  test('el cliente abre el chat con quien le pasó precio y se escriben', async () => {
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    assert.equal((await filas(ESCRIBIR, [id, '¿Podés venir el sábado?']))[0].autor_id, MARTA);
+    await como(CARLOS);
+    assert.equal(await abrir(CARLOS, PINTURA_MARTA, CARLOS), id, 'es la misma conversación');
+    await db.query(ESCRIBIR, [id, 'Sí, a las 9.']);
+    const lista = await filas('select otro_nombre, ultimo_texto, ultimo_es_mio, no_leidos from mis_conversaciones()');
+    assert.deepEqual(lista, [{ otro_nombre: 'Marta', ultimo_texto: 'Sí, a las 9.', ultimo_es_mio: true, no_leidos: 1 }]);
+  });
+
+  test('marcar leídos solo marca los del otro', async () => {
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    await db.query(ESCRIBIR, [id, 'Hola']);
+    await como(CARLOS);
+    assert.equal((await filas('select mensajes_sin_leer() as n'))[0].n, 1);
+    await db.query(ESCRIBIR, [id, 'Hola Marta']);
+    await db.query('select marcar_mensajes_leidos($1)', [id]);
+    assert.equal((await filas('select mensajes_sin_leer() as n'))[0].n, 0);
+    await como(MARTA);
+    assert.equal((await filas('select mensajes_sin_leer() as n'))[0].n, 1);
+  });
+
+  test('nadie más ve ni escribe en la conversación', async () => {
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    await db.query(ESCRIBIR, [id, 'Privado']);
+    for (const otro of [DIEGO, LUCIA, SERGIO]) {
+      await como(otro);
+      assert.equal((await filas('select count(*)::int as n from mensajes'))[0].n, 0);
+      assert.equal((await filas('select count(*)::int as n from conversaciones'))[0].n, 0);
+      await falla(ESCRIBIR, [id, 'Me meto'], /row-level security/);
+    }
+    await como(null);
+    await falla('select count(*) from mensajes', [], /permission denied/);
+  });
+
+  test('no se escribe a nombre de otro ni se editan o borran mensajes', async () => {
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    await falla('insert into mensajes (conversacion_id, texto, autor_id) values ($1, $2, $3)', [id, 'Trucho', CARLOS], /permission denied/);
+    await db.query(ESCRIBIR, [id, 'Hola']);
+    await falla(`update mensajes set texto = 'Cambiado'`, [], /permission denied/);
+    await falla('delete from mensajes', [], /permission denied/);
+    await falla(ESCRIBIR, [id, '   '], /mensajes_texto_check/);
+  });
+
+  test('solo se abre con un trabajador relacionado con el trabajo', async () => {
+    await como(MARTA);
+    await falla(ABRIR, [PINTURA_MARTA, SERGIO], /pasa precio/);
+    await como(SERGIO);
+    await falla(ABRIR, [PINTURA_MARTA, SERGIO], /pasa precio/);
+    await falla(ABRIR, [PINTURA_MARTA, CARLOS], /No podés chatear/);
+    await como(DIEGO);
+    await falla(ABRIR, [PINTURA_MARTA, CARLOS], /No podés chatear/);
+    // El elegido sí, aunque el trabajo ya esté asignado.
+    assert.ok(await abrir(RAMON, PLOMERIA_MARTA_ASIGNADO, RAMON));
+  });
+
+  test('con bloqueo o trabajo cancelado queda solo para leer', async () => {
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    await db.query(ESCRIBIR, [id, 'Hola']);
+    await db.query('insert into bloqueos (bloqueado_id) values ($1)', [CARLOS]);
+    await como(CARLOS);
+    await falla(ESCRIBIR, [id, 'Hola?'], /row-level security/);
+    assert.equal((await filas('select puedo_escribir from mis_conversaciones()'))[0].puedo_escribir, false);
+    assert.equal((await filas('select count(*)::int as n from mensajes'))[0].n, 1);
+    await falla(ABRIR, [ELECTRICIDAD_MARTA, LUCIA], /No podés chatear/);
+
+    const otro = await abrir(MARTA, ELECTRICIDAD_MARTA, LUCIA);
+    await db.query('select cancelar_trabajo($1)', [ELECTRICIDAD_MARTA]);
+    await falla(ESCRIBIR, [otro, 'Hola'], /row-level security/);
+  });
+
+  test('al elegir a uno, los demás quedan solo para leer', async () => {
+    const carlos = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    // Sergio no es de la zona: su precio se carga directo en la base.
+    await db.exec('reset role');
+    await db.query('insert into postulaciones (trabajo_id, trabajador_id, precio) values ($1, $2, 150000)', [
+      PINTURA_MARTA,
+      SERGIO,
+    ]);
+    const sergio = await abrir(MARTA, PINTURA_MARTA, SERGIO);
+    await db.query(ESCRIBIR, [sergio, 'Hola Sergio']);
+    const [{ id: postulacion }] = await filas(
+      'select id from postulaciones where trabajo_id = $1 and trabajador_id = $2',
+      [PINTURA_MARTA, CARLOS],
+    );
+    await db.query('select elegir_postulacion($1)', [postulacion]);
+    await db.query(ESCRIBIR, [carlos, 'Te elegí']);
+    await falla(ESCRIBIR, [sergio, 'Perdón'], /row-level security/);
+    await como(SERGIO);
+    await falla(ESCRIBIR, [sergio, '¿Y yo?'], /row-level security/);
+    assert.equal((await filas('select count(*)::int as n from mensajes'))[0].n, 1);
+  });
+
+  test('cada mensaje manda un push al otro con el link al chat', async () => {
+    await db.query(`insert into dispositivos (token, usuario_id) values ('ExponentPushToken[carlos]', $1)`, [CARLOS]);
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    await db.exec('reset role');
+    const antes = (await filas('select count(*)::int as n from net.enviados'))[0].n;
+    await como(MARTA);
+    await db.query(ESCRIBIR, [id, '¿Incluye el techo?']);
+    await db.exec('reset role');
+    const enviados = await filas('select body from net.enviados order by id offset $1', [antes]);
+    assert.equal(enviados.length, 1);
+    assert.deepEqual(enviados[0].body[0], {
+      to: 'ExponentPushToken[carlos]',
+      title: 'Marta',
+      body: '¿Incluye el techo?',
+      sound: 'default',
+      channelId: 'default',
+      data: { url: `/chat/${id}` },
+    });
+    assert.equal((await filas('select count(*)::int as n from notificaciones where usuario_id = $1 and tipo = $2', [CARLOS, 'mensaje']))[0].n, 0);
+  });
+
+  test('límite anti-spam de mensajes', async () => {
+    const id = await abrir(MARTA, PINTURA_MARTA, CARLOS);
+    await db.exec('reset role');
+    await db.query(`insert into mensajes (conversacion_id, autor_id, texto) select $1, $2, 'msj ' || n from generate_series(1, 60) n`, [id, MARTA]);
+    await como(MARTA);
+    await falla(ESCRIBIR, [id, 'Uno más'], /muchos mensajes/);
+  });
+});

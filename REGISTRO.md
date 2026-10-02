@@ -5,6 +5,17 @@ La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/l
 
 ## 2026-10-02
 
+### Chat dentro de la app
+
+- Tablas `conversaciones` (una por trabajo y trabajador) y `mensajes` (hasta 1000 caracteres). Solo las ven los dos que chatean; nadie edita ni borra mensajes.
+- `abrir_conversacion()`: el cliente la abre con quien le pasó precio, el invitado o el elegido; el trabajador, solo la suya. Con bloqueo no se abre.
+- Se puede escribir mientras el trabajo está abierto; después de elegir, solo con el elegido. Cancelado o con bloqueo, queda para leer.
+- `mis_conversaciones()`, `marcar_mensajes_leidos()` y `mensajes_sin_leer()`.
+- Cada mensaje manda un **push** al otro con el link al chat (no va a la campanita). Límite de 60 mensajes cada 10 minutos.
+- `mensajes` en la publicación de **Realtime**: llegan al instante, respetando las reglas.
+- **Bug encontrado por los tests:** sin trabajador elegido, `elegido = X` da `null` y el chequeo dejaba abrir el chat con cualquiera. Se corrigió con `coalesce` antes de aplicar.
+- 9 tests nuevos (88 en total), con prueba de que fallan si se saca la regla del elegido.
+
 ### Seguridad
 
 - **Revisión con `supabase db advisors`:** sin errores. Los helpers que usan las reglas (`mi_rol`, `puedo_postularme`, `invitacion_valida`, `cantidad_servicios`, etc.) se movieron al schema **`privado`**, que no está expuesto en la API: antes cualquiera podía llamarlos por `/rest/v1/rpc`. Quedan 11 avisos por funciones que la app llama a propósito (elegir, cancelar, contacto, borrar cuenta…) y que validan quién sos adentro. "Leaked password protection" requiere plan pago.
