@@ -1124,3 +1124,31 @@ describe('chat', () => {
     await falla(ESCRIBIR, [id, 'Uno más'], /muchos mensajes/);
   });
 });
+
+describe('fecha exacta', () => {
+  const PUBLICAR = `insert into trabajos (oficio, descripcion, zona, para_cuando, fecha) values ('Pintura', 'Pintar la reja del frente.', 'Centro', $1, $2::date) returning fecha`;
+  const dia = (n) => `(now() at time zone 'America/Argentina/Buenos_Aires')::date + ${n}`;
+
+  test('se puede elegir un día exacto desde hoy', async () => {
+    await como(MARTA);
+    const [{ hoy }] = await filas(`select ${dia(0)} as hoy`);
+    assert.ok((await filas(PUBLICAR, ['fecha', hoy]))[0].fecha);
+    const [{ d }] = await filas(`select ${dia(30)} as d`);
+    assert.ok((await filas(PUBLICAR, ['fecha', d]))[0].fecha);
+  });
+
+  test('no se puede una fecha pasada ni a más de un año', async () => {
+    await como(MARTA);
+    const [{ ayer, lejos }] = await filas(`select ${dia(-1)} as ayer, ${dia(400)} as lejos`);
+    await falla(PUBLICAR, ['fecha', ayer], /ya pasó/);
+    await falla(PUBLICAR, ['fecha', lejos], /próximo año/);
+  });
+
+  test('"fecha" exige el día, y las otras opciones no lo llevan', async () => {
+    await como(MARTA);
+    const [{ d }] = await filas(`select ${dia(5)} as d`);
+    await falla(PUBLICAR, ['fecha', null], /trabajos_fecha/);
+    await falla(PUBLICAR, ['sin_apuro', d], /trabajos_fecha/);
+    assert.equal((await filas(PUBLICAR, ['sin_apuro', null]))[0].fecha, null);
+  });
+});
