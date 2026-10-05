@@ -3,6 +3,14 @@
 Todo lo que se fue haciendo en la base (Supabase), del más nuevo al más viejo.
 La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/laburapp-app/blob/main/REGISTRO.md).
 
+## 2026-10-05
+
+### Fecha exacta para un trabajo
+
+- `trabajos.para_cuando` suma `'fecha'`, con el día en la columna nueva `fecha` (constraint: con `'fecha'` tiene que haber día, y sin `'fecha'` no).
+- Trigger `privado.validar_fecha_trabajo`: desde hoy y hasta un año, con la hora de Argentina.
+- 3 tests nuevos (91 en total).
+
 ## 2026-10-02
 
 ### Chat dentro de la app
