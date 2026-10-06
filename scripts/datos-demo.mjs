@@ -185,7 +185,7 @@ function crearUsuarios() {
   const filas = [
     ...trabajadores.map((t, i) => ({
       email: `${t.u}@laburapp.test`,
-      datos: { rol: 'trabajador', nombre: t.nombre, apellido: t.apellido, sexo: t.sexo, whatsapp: `33640010${String(i).padStart(2, '0')}`, oficios: t.oficios, oficio_otro: t.otro ?? null, zonas: t.zonas },
+      datos: { rol: 'trabajador', nombre: t.nombre, apellido: t.apellido, sexo: t.sexo, whatsapp: `33640010${String(i).padStart(2, '0')}`, oficios: t.oficios, oficio_otro: t.otro ?? null, zonas: t.zonas, alias_pago: `demo.trabajador${i}`, titular_pago: `${t.nombre} ${t.apellido}` },
     })),
     ...clientes.map((c, i) => ({
       email: `${c.u}@laburapp.test`,

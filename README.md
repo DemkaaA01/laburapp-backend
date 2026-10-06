@@ -40,6 +40,8 @@ Funciones que usa la app (`supabase.rpc(...)`):
 |---|---|---|
 | `registrar_dispositivo(p_token, p_plataforma)` / `olvidar_dispositivo(p_token)` | cualquiera con sesión | guarda u olvida el token de push de este teléfono |
 | `marcar_notificaciones_leidas()` | cualquiera con sesión | marca todos sus avisos como leídos |
+| `informar_pago(p_trabajo_id, p_monto)` | cliente | avisa que le transfirió al trabajador (`pago_estado` → `informado`) |
+| `responder_pago(p_trabajo_id, p_recibido)` | trabajador elegido | confirma que le llegó (`recibido`) o que no (`sin_pagar`) |
 | `abrir_conversacion(p_trabajo_id, p_trabajador_id)` | cliente o trabajador relacionado | crea o encuentra el chat y devuelve su id |
 | `mis_conversaciones()` | cualquiera con sesión | sus chats con la otra persona, el último mensaje y los no leídos |
 | `marcar_mensajes_leidos(p_conversacion)` / `mensajes_sin_leer()` | quien chatea | marca leídos los del otro / cuenta los no leídos |
@@ -47,7 +49,7 @@ Funciones que usa la app (`supabase.rpc(...)`):
 | `servicios_para_mi(p_oficio)` | cliente | servicios activos que llegan a su zona, mejor puntuados primero |
 | `trabajadores_recomendados(p_limite)` | cliente | trabajadores de sus rubros y su zona, mejor puntuados primero |
 | `elegir_postulacion(p_postulacion_id)` | cliente | asigna el trabajo y fija el precio acordado |
-| `contacto_del_trabajo(p_trabajo_id)` | cliente o trabajador elegido | nombre y WhatsApp de la otra parte |
+| `contacto_del_trabajo(p_trabajo_id)` | cliente o trabajador elegido | nombre y WhatsApp de la otra parte; el cliente además ve el alias y el titular para pagar |
 | `marcar_terminado(p_trabajo_id)` | trabajador elegido | asignado → por_confirmar |
 | `confirmar_terminado(p_trabajo_id)` | cliente | por_confirmar → terminado (habilita las calificaciones) |
 | `rechazar_terminado(p_trabajo_id)` | cliente | por_confirmar → asignado |

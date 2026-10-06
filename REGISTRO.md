@@ -3,6 +3,17 @@
 Todo lo que se fue haciendo en la base (Supabase), del más nuevo al más viejo.
 La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/laburapp-app/blob/main/REGISTRO.md).
 
+## 2026-10-06
+
+### Pago directo por alias
+
+- `datos_privados.alias_pago` (alias de 6 a 20 caracteres en minúscula o CVU/CBU de 22 dígitos) y `titular_pago`. Obligatorio para registrarse como trabajador; se puede cambiar pero no borrar.
+- Sin alias no se pasa precio (trigger `privado.exigir_alias`), para los trabajadores anteriores que no lo cargaron.
+- `contacto_del_trabajo()` devuelve también alias y titular, solo al cliente.
+- `trabajos.pago_estado` (`sin_pagar` → `informado` → `recibido`), `pago_monto` y fechas. Solo cambia con `informar_pago()` (cliente) y `responder_pago()` (trabajador elegido), con avisos `pago_informado`, `pago_recibido` y `pago_no_llego`.
+- Seed y datos de demostración con alias; a los trabajadores de prueba que ya estaban en `laburapp-dev` se les cargó uno (`demo.<nombre>.mp`).
+- 8 tests nuevos (99 en total).
+
 ## 2026-10-05
 
 ### Fecha exacta para un trabajo

@@ -83,6 +83,8 @@ const TRABAJADOR_OK = {
   sexo: 'mujer',
   oficios: ['Limpieza'],
   zonas: ['Centro'],
+  alias_pago: 'Ana.Lopez.MP',
+  titular_pago: 'Ana López',
 };
 
 describe('registro y perfiles', () => {
@@ -280,7 +282,9 @@ describe('elegir, contacto, terminar y cancelar', () => {
     await como(MARTA);
     await falla('select * from contacto_del_trabajo($1)', [PINTURA_MARTA], /cuando el cliente elige/);
 
-    const [contacto] = await filas('select * from contacto_del_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    const [contacto] = await filas('select nombre, apellido, whatsapp from contacto_del_trabajo($1)', [
+      PLOMERIA_MARTA_ASIGNADO,
+    ]);
     assert.deepEqual(contacto, { nombre: 'Ramón', apellido: 'Sosa', whatsapp: '3364555555' });
 
     await como(RAMON);
@@ -1150,5 +1154,90 @@ describe('fecha exacta', () => {
     await falla(PUBLICAR, ['fecha', null], /trabajos_fecha/);
     await falla(PUBLICAR, ['sin_apuro', d], /trabajos_fecha/);
     assert.equal((await filas(PUBLICAR, ['sin_apuro', null]))[0].fecha, null);
+  });
+});
+
+describe('pago por alias', () => {
+  const datos = (id) => filas('select alias_pago, titular_pago from datos_privados where id = $1', [id]);
+
+  test('el trabajador se registra con su alias (en minúscula) y sin alias no puede', async () => {
+    await registrar(TRABAJADOR_OK);
+    const [{ alias_pago }] = await filas(`select d.alias_pago from datos_privados d join perfiles p on p.id = d.id where p.nombre = 'Ana'`);
+    assert.equal(alias_pago, 'ana.lopez.mp');
+  });
+
+  test('registro de trabajador sin alias falla; el de cliente no lo necesita', async () => {
+    const { alias_pago, titular_pago, ...sinAlias } = TRABAJADOR_OK;
+    assert.ok(alias_pago && titular_pago);
+    await db.exec('savepoint s');
+    await assert.rejects(registrar(sinAlias), /Falta el alias/);
+    await db.exec('rollback to savepoint s');
+    await assert.rejects(registrar({ ...TRABAJADOR_OK, alias_pago: 'no vale!' }), /datos_privados_alias_pago_check/);
+  });
+
+  test('alias o CVU válidos; se puede cambiar pero no borrar', async () => {
+    await como(CARLOS);
+    await db.query(`update datos_privados set alias_pago = '0000003100099999999999' where id = $1`, [CARLOS]);
+    assert.equal((await datos(CARLOS))[0].alias_pago, '0000003100099999999999');
+    await falla(`update datos_privados set alias_pago = 'abc' where id = $1`, [CARLOS], /alias_pago_check/);
+    await falla(`update datos_privados set alias_pago = null, titular_pago = null where id = $1`, [CARLOS], /no borrarlo/);
+  });
+
+  test('sin alias no se pasa precio', async () => {
+    await db.exec('reset role');
+    await db.query('alter table datos_privados disable trigger no_borrar_alias');
+    await db.query(`update datos_privados set alias_pago = null, titular_pago = null where id = $1`, [LUCIA]);
+    await db.query('alter table datos_privados enable trigger no_borrar_alias');
+    await como(LUCIA);
+    await falla(`insert into postulaciones (trabajo_id, precio) values ($1, 30000)`, [ELECTRICIDAD_MARTA], /alias o CVU/);
+  });
+
+  test('el cliente ve el alias del elegido; el trabajador no ve nada de pago del cliente', async () => {
+    await como(MARTA);
+    const [c] = await filas('select alias_pago, titular_pago from contacto_del_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.deepEqual(c, { alias_pago: '0000003100012345678901', titular_pago: 'Ramón Sosa' });
+    await como(RAMON);
+    const [t] = await filas('select alias_pago, titular_pago from contacto_del_trabajo($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.deepEqual(t, { alias_pago: null, titular_pago: null });
+    await como(DIEGO);
+    assert.equal((await datos(RAMON)).length, 0);
+  });
+
+  test('ya pagué → recibí el pago, con avisos a cada uno', async () => {
+    await como(MARTA);
+    await db.query('select informar_pago($1, 30000)', [PLOMERIA_MARTA_ASIGNADO]);
+    await como(RAMON);
+    const [aviso] = await filas(`select titulo, cuerpo from notificaciones where tipo = 'pago_informado'`);
+    assert.match(aviso.titulo, /Marta dice que te pagó/);
+    assert.match(aviso.cuerpo, /30.000/);
+    await db.query('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO]);
+    const [t] = await filas('select pago_estado, pago_monto from trabajos where id = $1', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.deepEqual(t, { pago_estado: 'recibido', pago_monto: 30000 });
+    await como(MARTA);
+    await falla('select informar_pago($1, 1)', [PLOMERIA_MARTA_ASIGNADO], /ya confirmó/);
+    assert.equal((await filas(`select count(*)::int as n from notificaciones where tipo = 'pago_recibido'`))[0].n, 1);
+  });
+
+  test('si no le llegó, vuelve a sin pagar y se avisa al cliente', async () => {
+    await como(MARTA);
+    await db.query('select informar_pago($1)', [PLOMERIA_MARTA_ASIGNADO]);
+    await como(RAMON);
+    await db.query('select responder_pago($1, false)', [PLOMERIA_MARTA_ASIGNADO]);
+    await como(MARTA);
+    const [t] = await filas('select pago_estado from trabajos where id = $1', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.equal(t.pago_estado, 'sin_pagar');
+    assert.equal((await filas(`select count(*)::int as n from notificaciones where tipo = 'pago_no_llego'`))[0].n, 1);
+  });
+
+  test('nadie más puede tocar el pago, ni a mano', async () => {
+    await como(RAMON);
+    await falla('select informar_pago($1)', [PLOMERIA_MARTA_ASIGNADO], /Solo el cliente/);
+    await como(CARLOS);
+    await falla('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO], /Solo el trabajador elegido/);
+    await como(MARTA);
+    await falla('select informar_pago($1)', [PINTURA_MARTA], /Primero elegí/);
+    await falla(`update trabajos set pago_estado = 'recibido' where id = $1`, [PLOMERIA_MARTA_ASIGNADO], /permission denied/);
+    await como(RAMON);
+    await falla('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO], /todavía no avisó/);
   });
 });

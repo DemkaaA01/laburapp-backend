@@ -19,13 +19,13 @@ with usuarios (id, email, datos) as (
     ('22222222-2222-4222-8222-222222222222'::uuid, 'kiosco@laburapp.test',
      '{"rol":"cliente","nombre":"Diego","apellido":"Fernández","whatsapp":"3364222222","sexo":"varon","oficios":["Electricidad","Gas","Aire acondicionado"],"zonas":["Zona Norte"],"es_comercio":true}'::jsonb),
     ('33333333-3333-4333-8333-333333333333'::uuid, 'carlos@laburapp.test',
-     '{"rol":"trabajador","nombre":"Carlos","apellido":"Ruiz","whatsapp":"3364333333","sexo":"varon","oficios":["Pintura","Albañilería"],"zonas":["Centro","Zona Sur"]}'::jsonb),
+     '{"rol":"trabajador","nombre":"Carlos","apellido":"Ruiz","whatsapp":"3364333333","sexo":"varon","oficios":["Pintura","Albañilería"],"zonas":["Centro","Zona Sur"],"alias_pago":"carlos.ruiz.mp","titular_pago":"Carlos Ruiz"}'::jsonb),
     ('44444444-4444-4444-8444-444444444444'::uuid, 'lucia@laburapp.test',
-     '{"rol":"trabajador","nombre":"Lucía","apellido":"Benítez","whatsapp":"3364444444","sexo":"mujer","oficios":["Electricidad"],"zonas":["Toda la ciudad"]}'::jsonb),
+     '{"rol":"trabajador","nombre":"Lucía","apellido":"Benítez","whatsapp":"3364444444","sexo":"mujer","oficios":["Electricidad"],"zonas":["Toda la ciudad"],"alias_pago":"lucia.benitez","titular_pago":"Lucía Benítez"}'::jsonb),
     ('55555555-5555-4555-8555-555555555555'::uuid, 'ramon@laburapp.test',
-     '{"rol":"trabajador","nombre":"Ramón","apellido":"Sosa","whatsapp":"3364555555","sexo":"varon","oficios":["Plomería","Gas"],"zonas":["Zona Norte","Centro"]}'::jsonb),
+     '{"rol":"trabajador","nombre":"Ramón","apellido":"Sosa","whatsapp":"3364555555","sexo":"varon","oficios":["Plomería","Gas"],"zonas":["Zona Norte","Centro"],"alias_pago":"0000003100012345678901","titular_pago":"Ramón Sosa"}'::jsonb),
     ('66666666-6666-4666-8666-666666666666'::uuid, 'sergio@laburapp.test',
-     '{"rol":"trabajador","nombre":"Sergio","apellido":"Paz","whatsapp":"3364666666","sexo":"prefiero_no_decir","oficios":["Pintura","Otro"],"oficio_otro":"Techista","zonas":["Alrededores"]}'::jsonb)
+     '{"rol":"trabajador","nombre":"Sergio","apellido":"Paz","whatsapp":"3364666666","sexo":"prefiero_no_decir","oficios":["Pintura","Otro"],"oficio_otro":"Techista","zonas":["Alrededores"],"alias_pago":"sergio.paz.techos","titular_pago":"Sergio Paz"}'::jsonb)
 ),
 nuevos as (
   insert into auth.users (
