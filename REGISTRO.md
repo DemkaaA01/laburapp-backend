@@ -5,6 +5,13 @@ La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/l
 
 ## 2026-10-06
 
+### Pagos en partes y avances del trabajo
+
+- Tabla `pagos` (monto, nota, comprobante, estado `informado`/`recibido`/`no_llego`): reemplaza a las columnas `pago_*` de `trabajos` (los pagos que ya había se pasaron a la tabla). `informar_pago(p_trabajo_id, p_monto, p_nota, p_comprobante)` devuelve el id; `responder_pago(p_pago_id, p_recibido)`. Hasta 20 pagos por día por trabajo.
+- Tabla `avances` (texto, hasta 5 fotos, porcentaje solo del trabajador): la cargan y la ven el cliente y el trabajador elegido mientras el trabajo está en curso; cada uno borra los suyos. Aviso `avance` al otro. Hasta 30 por día.
+- Helper `privado.participo_del_trabajo()`. Las fotos de avances van al bucket `fotos-trabajos` y las ve el otro participante; los comprobantes ahora se buscan en `pagos`.
+- Tests reescritos para pagos y 4 nuevos de avances (104 en total).
+
 ### Comprobante de pago
 
 - Bucket privado `comprobantes` (imágenes de hasta 5 MB). Cada cliente sube a su carpeta; lo ven él y el trabajador elegido del trabajo donde se usó.

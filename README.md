@@ -32,6 +32,8 @@ tests/
 | `notificaciones` | avisos de cada usuario (la campanita); los crean triggers y disparan el push | solo el dueño |
 | `dispositivos` | tokens de push de Expo de cada teléfono | nadie directo: solo por funciones |
 | `conversaciones` | un chat por trabajo y trabajador (cliente ↔ quien pasó precio, fue invitado o elegido) | los dos que chatean |
+| `pagos` | pagos del cliente al trabajador (monto, nota, comprobante, estado) | el cliente y el trabajador elegido; se crean y responden solo por funciones |
+| `avances` | cómo va el trabajo: texto, fotos y porcentaje (solo el trabajador) | el cliente y el trabajador elegido, mientras está en curso |
 | `mensajes` | mensajes del chat (hasta 1000 caracteres); llegan al instante con Realtime y mandan push | los dos que chatean; escribir solo si el trabajo sigue abierto (o sos el elegido), sin bloqueo y no cancelado |
 
 Funciones que usa la app (`supabase.rpc(...)`):
@@ -40,8 +42,8 @@ Funciones que usa la app (`supabase.rpc(...)`):
 |---|---|---|
 | `registrar_dispositivo(p_token, p_plataforma)` / `olvidar_dispositivo(p_token)` | cualquiera con sesión | guarda u olvida el token de push de este teléfono |
 | `marcar_notificaciones_leidas()` | cualquiera con sesión | marca todos sus avisos como leídos |
-| `informar_pago(p_trabajo_id, p_monto, p_comprobante)` | cliente | avisa que le transfirió al trabajador (`pago_estado` → `informado`), con la captura opcional del bucket `comprobantes` |
-| `responder_pago(p_trabajo_id, p_recibido)` | trabajador elegido | confirma que le llegó (`recibido`) o que no (`sin_pagar`) |
+| `informar_pago(p_trabajo_id, p_monto, p_nota, p_comprobante)` | cliente | registra un pago (puede haber varios) en `pagos`, con nota y captura opcionales del bucket `comprobantes` |
+| `responder_pago(p_pago_id, p_recibido)` | trabajador elegido | confirma que le llegó ese pago (`recibido`) o que no (`no_llego`) |
 | `abrir_conversacion(p_trabajo_id, p_trabajador_id)` | cliente o trabajador relacionado | crea o encuentra el chat y devuelve su id |
 | `mis_conversaciones()` | cualquiera con sesión | sus chats con la otra persona, el último mensaje y los no leídos |
 | `marcar_mensajes_leidos(p_conversacion)` / `mensajes_sin_leer()` | quien chatea | marca leídos los del otro / cuenta los no leídos |

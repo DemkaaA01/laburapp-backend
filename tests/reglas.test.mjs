@@ -1203,42 +1203,47 @@ describe('pago por alias', () => {
     assert.equal((await datos(RAMON)).length, 0);
   });
 
-  test('ya pagué → recibí el pago, con avisos a cada uno', async () => {
+});
+
+describe('pagos en partes', () => {
+  const PAGAR = 'select informar_pago($1, $2, $3, $4) as id';
+  const pagos = () => filas('select monto, nota, estado from pagos order by created_at');
+
+  test('el cliente registra varios pagos y el trabajador confirma cada uno', async () => {
     await como(MARTA);
-    await db.query('select informar_pago($1, 30000)', [PLOMERIA_MARTA_ASIGNADO]);
+    const [{ id: sena }] = await filas(PAGAR, [PLOMERIA_MARTA_ASIGNADO, 10000, 'Seña', null]);
+    const [{ id: saldo }] = await filas(PAGAR, [PLOMERIA_MARTA_ASIGNADO, 20000, null, null]);
     await como(RAMON);
-    const [aviso] = await filas(`select titulo, cuerpo from notificaciones where tipo = 'pago_informado'`);
-    assert.match(aviso.titulo, /Marta dice que te pagó/);
-    assert.match(aviso.cuerpo, /30.000/);
-    await db.query('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO]);
-    const [t] = await filas('select pago_estado, pago_monto from trabajos where id = $1', [PLOMERIA_MARTA_ASIGNADO]);
-    assert.deepEqual(t, { pago_estado: 'recibido', pago_monto: 30000 });
+    const avisos = await filas(`select titulo, cuerpo from notificaciones where tipo = 'pago_informado' order by created_at`);
+    assert.equal(avisos.length, 2);
+    assert.equal(avisos[0].titulo, 'Marta dice que te pagó $ 10.000');
+    assert.match(avisos[0].cuerpo, /Seña/);
+    await db.query('select responder_pago($1, true)', [sena]);
+    await db.query('select responder_pago($1, false)', [saldo]);
+    assert.deepEqual(await pagos(), [
+      { monto: 10000, nota: 'Seña', estado: 'recibido' },
+      { monto: 20000, nota: null, estado: 'no_llego' },
+    ]);
+    await falla('select responder_pago($1, true)', [sena], /ya fue respondido/);
     await como(MARTA);
-    await falla('select informar_pago($1, 1)', [PLOMERIA_MARTA_ASIGNADO], /ya confirmó/);
-    assert.equal((await filas(`select count(*)::int as n from notificaciones where tipo = 'pago_recibido'`))[0].n, 1);
+    const tipos = (await filas('select tipo from notificaciones order by created_at')).map((n) => n.tipo);
+    assert.deepEqual(tipos.filter((t) => t.startsWith('pago')), ['pago_recibido', 'pago_no_llego']);
   });
 
-  test('si no le llegó, vuelve a sin pagar y se avisa al cliente', async () => {
-    await como(MARTA);
-    await db.query('select informar_pago($1)', [PLOMERIA_MARTA_ASIGNADO]);
+  test('solo el cliente paga, solo el elegido confirma, y nadie más ve los pagos', async () => {
     await como(RAMON);
-    await db.query('select responder_pago($1, false)', [PLOMERIA_MARTA_ASIGNADO]);
+    await falla(PAGAR, [PLOMERIA_MARTA_ASIGNADO, 100, null, null], /Solo el cliente/);
     await como(MARTA);
-    const [t] = await filas('select pago_estado from trabajos where id = $1', [PLOMERIA_MARTA_ASIGNADO]);
-    assert.equal(t.pago_estado, 'sin_pagar');
-    assert.equal((await filas(`select count(*)::int as n from notificaciones where tipo = 'pago_no_llego'`))[0].n, 1);
-  });
-
-  test('nadie más puede tocar el pago, ni a mano', async () => {
-    await como(RAMON);
-    await falla('select informar_pago($1)', [PLOMERIA_MARTA_ASIGNADO], /Solo el cliente/);
+    await falla(PAGAR, [PINTURA_MARTA, 100, null, null], /Primero elegí/);
+    await falla(PAGAR, [PLOMERIA_MARTA_ASIGNADO, 0, null, null], /pagos_monto_check/);
+    const [{ id }] = await filas(PAGAR, [PLOMERIA_MARTA_ASIGNADO, 5000, null, null]);
+    await falla(`update pagos set estado = 'recibido'`, [], /permission denied/);
+    await falla('insert into pagos (trabajo_id, monto) values ($1, 1)', [PLOMERIA_MARTA_ASIGNADO], /permission denied/);
     await como(CARLOS);
-    await falla('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO], /Solo el trabajador elegido/);
-    await como(MARTA);
-    await falla('select informar_pago($1)', [PINTURA_MARTA], /Primero elegí/);
-    await falla(`update trabajos set pago_estado = 'recibido' where id = $1`, [PLOMERIA_MARTA_ASIGNADO], /permission denied/);
+    await falla('select responder_pago($1, true)', [id], /Solo el trabajador elegido/);
+    assert.equal((await pagos()).length, 0);
     await como(RAMON);
-    await falla('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO], /todavía no avisó/);
+    assert.equal((await pagos()).length, 1);
   });
 });
 
@@ -1247,17 +1252,14 @@ describe('comprobante de pago', () => {
   const VER = `select name from storage.objects where bucket_id = 'comprobantes'`;
   const RUTA = `${MARTA}/transferencia.jpg`;
 
-  test('el cliente sube su comprobante y lo ve solo él y el trabajador elegido', async () => {
+  test('lo ven solo el cliente y el trabajador elegido', async () => {
     await como(MARTA);
     await db.query(SUBIR, [RUTA]);
-    await db.query('select informar_pago($1, 30000, $2)', [PLOMERIA_MARTA_ASIGNADO, RUTA]);
-    assert.equal((await filas(VER)).length, 1);
-
+    await db.query('select informar_pago($1, 30000, null, $2)', [PLOMERIA_MARTA_ASIGNADO, RUTA]);
     await como(RAMON);
     assert.deepEqual(await filas(VER), [{ name: RUTA }]);
     const [aviso] = await filas(`select cuerpo from notificaciones where tipo = 'pago_informado'`);
     assert.match(aviso.cuerpo, /Mandó el comprobante/);
-
     for (const otro of [CARLOS, LUCIA, DIEGO]) {
       await como(otro);
       assert.equal((await filas(VER)).length, 0);
@@ -1268,19 +1270,63 @@ describe('comprobante de pago', () => {
     await como(DIEGO);
     await falla(SUBIR, [RUTA], /row-level security/);
     await como(MARTA);
-    await falla('select informar_pago($1, null, $2)', [PLOMERIA_MARTA_ASIGNADO, `${DIEGO}/ajeno.jpg`], /tiene que ser tuyo/);
+    await falla('select informar_pago($1, 100, null, $2)', [PLOMERIA_MARTA_ASIGNADO, `${DIEGO}/ajeno.jpg`], /tiene que ser tuyo/);
+  });
+});
+
+describe('avances del trabajo', () => {
+  const AVANZAR = 'insert into avances (trabajo_id, texto, fotos, porcentaje) values ($1, $2, $3, $4)';
+
+  test('los dos cuentan cómo va; el porcentaje lo pone el trabajador', async () => {
+    await como(RAMON);
+    await db.query(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Cambié el caño de la cocina.', [`${RAMON}/cano.jpg`], 50]);
+    await como(MARTA);
+    await db.query(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Quedó perfecto, falta el baño.', [], null]);
+    await falla(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Ya está al 100', [], 100], /row-level security/);
+    const lista = await filas('select texto, porcentaje from avances order by created_at');
+    assert.deepEqual(lista, [
+      { texto: 'Cambié el caño de la cocina.', porcentaje: 50 },
+      { texto: 'Quedó perfecto, falta el baño.', porcentaje: null },
+    ]);
+    const [aviso] = await filas(`select titulo from notificaciones where tipo = 'avance'`);
+    assert.equal(aviso.titulo, 'Ramón contó cómo va el trabajo (50 %)');
   });
 
-  test('al corregir el monto queda el comprobante; si no llegó, se borra del trabajo', async () => {
-    await como(MARTA);
-    await db.query('select informar_pago($1, 30000, $2)', [PLOMERIA_MARTA_ASIGNADO, RUTA]);
-    await db.query('select informar_pago($1, 31000)', [PLOMERIA_MARTA_ASIGNADO]);
-    const comprobante = async () =>
-      (await filas('select pago_comprobante from trabajos where id = $1', [PLOMERIA_MARTA_ASIGNADO]))[0].pago_comprobante;
-    assert.equal(await comprobante(), RUTA);
+  test('la foto del avance la ve el otro, y nadie más', async () => {
     await como(RAMON);
-    await db.query('select responder_pago($1, false)', [PLOMERIA_MARTA_ASIGNADO]);
-    assert.equal(await comprobante(), null);
-    assert.equal((await filas(VER)).length, 0, 'el trabajador ya no lo ve');
+    await db.query(`insert into storage.objects (bucket_id, name) values ('fotos-trabajos', $1)`, [`${RAMON}/cano.jpg`]);
+    await db.query(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Así va.', [`${RAMON}/cano.jpg`], null]);
+    const VER = `select name from storage.objects where name = $1`;
+    await como(MARTA);
+    assert.equal((await filas(VER, [`${RAMON}/cano.jpg`])).length, 1);
+    await como(DIEGO);
+    assert.equal((await filas(VER, [`${RAMON}/cano.jpg`])).length, 0);
+  });
+
+  test('nadie más carga ni ve avances, ni con el trabajo abierto o terminado', async () => {
+    await como(RAMON);
+    await db.query(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Privado.', [], null]);
+    for (const otro of [CARLOS, DIEGO, LUCIA]) {
+      await como(otro);
+      assert.equal((await filas('select count(*)::int as n from avances'))[0].n, 0);
+      await falla(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Me meto.', [], null], /row-level security/);
+    }
+    await como(MARTA);
+    await falla(AVANZAR, [PINTURA_MARTA, 'Todavía abierto.', [], null], /row-level security/);
+    await como(DIEGO);
+    await falla(AVANZAR, [LED_DIEGO_TERMINADO, 'Ya terminó.', [], null], /row-level security/);
+    await como(RAMON);
+    await falla(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Foto ajena.', [`${MARTA}/x.jpg`], null], /avances_fotos/);
+  });
+
+  test('cada uno borra solo sus avances', async () => {
+    await como(RAMON);
+    await db.query(AVANZAR, [PLOMERIA_MARTA_ASIGNADO, 'Me equivoqué.', [], null]);
+    await como(MARTA);
+    await db.query('delete from avances');
+    await como(RAMON);
+    assert.equal((await filas('select count(*)::int as n from avances'))[0].n, 1);
+    await db.query('delete from avances');
+    assert.equal((await filas('select count(*)::int as n from avances'))[0].n, 0);
   });
 });
