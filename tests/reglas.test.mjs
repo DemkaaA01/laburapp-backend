@@ -1241,3 +1241,46 @@ describe('pago por alias', () => {
     await falla('select responder_pago($1, true)', [PLOMERIA_MARTA_ASIGNADO], /todavía no avisó/);
   });
 });
+
+describe('comprobante de pago', () => {
+  const SUBIR = `insert into storage.objects (bucket_id, name) values ('comprobantes', $1)`;
+  const VER = `select name from storage.objects where bucket_id = 'comprobantes'`;
+  const RUTA = `${MARTA}/transferencia.jpg`;
+
+  test('el cliente sube su comprobante y lo ve solo él y el trabajador elegido', async () => {
+    await como(MARTA);
+    await db.query(SUBIR, [RUTA]);
+    await db.query('select informar_pago($1, 30000, $2)', [PLOMERIA_MARTA_ASIGNADO, RUTA]);
+    assert.equal((await filas(VER)).length, 1);
+
+    await como(RAMON);
+    assert.deepEqual(await filas(VER), [{ name: RUTA }]);
+    const [aviso] = await filas(`select cuerpo from notificaciones where tipo = 'pago_informado'`);
+    assert.match(aviso.cuerpo, /Mandó el comprobante/);
+
+    for (const otro of [CARLOS, LUCIA, DIEGO]) {
+      await como(otro);
+      assert.equal((await filas(VER)).length, 0);
+    }
+  });
+
+  test('no se sube a carpeta ajena ni se usa el comprobante de otro', async () => {
+    await como(DIEGO);
+    await falla(SUBIR, [RUTA], /row-level security/);
+    await como(MARTA);
+    await falla('select informar_pago($1, null, $2)', [PLOMERIA_MARTA_ASIGNADO, `${DIEGO}/ajeno.jpg`], /tiene que ser tuyo/);
+  });
+
+  test('al corregir el monto queda el comprobante; si no llegó, se borra del trabajo', async () => {
+    await como(MARTA);
+    await db.query('select informar_pago($1, 30000, $2)', [PLOMERIA_MARTA_ASIGNADO, RUTA]);
+    await db.query('select informar_pago($1, 31000)', [PLOMERIA_MARTA_ASIGNADO]);
+    const comprobante = async () =>
+      (await filas('select pago_comprobante from trabajos where id = $1', [PLOMERIA_MARTA_ASIGNADO]))[0].pago_comprobante;
+    assert.equal(await comprobante(), RUTA);
+    await como(RAMON);
+    await db.query('select responder_pago($1, false)', [PLOMERIA_MARTA_ASIGNADO]);
+    assert.equal(await comprobante(), null);
+    assert.equal((await filas(VER)).length, 0, 'el trabajador ya no lo ve');
+  });
+});

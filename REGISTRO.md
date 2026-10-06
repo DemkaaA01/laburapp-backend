@@ -5,6 +5,12 @@ La app tiene su propio registro en [laburapp-app](https://github.com/DemkaaA01/l
 
 ## 2026-10-06
 
+### Comprobante de pago
+
+- Bucket privado `comprobantes` (imágenes de hasta 5 MB). Cada cliente sube a su carpeta; lo ven él y el trabajador elegido del trabajo donde se usó.
+- `trabajos.pago_comprobante` y `informar_pago(p_trabajo_id, p_monto, p_comprobante)`: el comprobante tiene que ser de la carpeta del cliente. Al corregir el monto sin adjuntar otro queda el anterior; si el trabajador dice que no le llegó, se saca.
+- 3 tests nuevos (102 en total).
+
 ### Pago directo por alias
 
 - `datos_privados.alias_pago` (alias de 6 a 20 caracteres en minúscula o CVU/CBU de 22 dígitos) y `titular_pago`. Obligatorio para registrarse como trabajador; se puede cambiar pero no borrar.

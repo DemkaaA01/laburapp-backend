@@ -40,7 +40,7 @@ Funciones que usa la app (`supabase.rpc(...)`):
 |---|---|---|
 | `registrar_dispositivo(p_token, p_plataforma)` / `olvidar_dispositivo(p_token)` | cualquiera con sesión | guarda u olvida el token de push de este teléfono |
 | `marcar_notificaciones_leidas()` | cualquiera con sesión | marca todos sus avisos como leídos |
-| `informar_pago(p_trabajo_id, p_monto)` | cliente | avisa que le transfirió al trabajador (`pago_estado` → `informado`) |
+| `informar_pago(p_trabajo_id, p_monto, p_comprobante)` | cliente | avisa que le transfirió al trabajador (`pago_estado` → `informado`), con la captura opcional del bucket `comprobantes` |
 | `responder_pago(p_trabajo_id, p_recibido)` | trabajador elegido | confirma que le llegó (`recibido`) o que no (`sin_pagar`) |
 | `abrir_conversacion(p_trabajo_id, p_trabajador_id)` | cliente o trabajador relacionado | crea o encuentra el chat y devuelve su id |
 | `mis_conversaciones()` | cualquiera con sesión | sus chats con la otra persona, el último mensaje y los no leídos |
